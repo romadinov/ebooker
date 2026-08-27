@@ -1,0 +1,21 @@
+# generated audio and intermediates
+work/
+out/
+# TTS model weights, re-downloadable
+models/
+# reference voices are local inputs and must not be published
+voices/
+# source books are yours, not the repo's
+*.epub
+*.m4b
+*.mp3
+*.wav
+
+__pycache__/
+*.py[cod]
+.venv/
+esp/
+cbx/
+kok/
+cosy/
+.DS_Store

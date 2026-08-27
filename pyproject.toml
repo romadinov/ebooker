@@ -1,0 +1,56 @@
+[project]
+name = "ebooker"
+version = "0.1.0"
+description = "EPUB to Apple audiobook (M4B), locally, with ASR-verified narration"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Alexey Romadinov" }
+]
+keywords = ["audiobook", "tts", "epub", "m4b", "whisper", "text-to-speech"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+]
+
+dependencies = [
+    "lxml>=6.1.2",
+    "num2words>=0.5.14",
+    "ruaccent>=1.5.8.3",
+    "soundfile>=0.14.0",
+    "torch>=2.13.0",
+    "torchaudio>=2.11.0",
+    "kokoro>=0.9.4",
+    # Apple Silicon only: the fastest Whisper on that platform. On other
+    # systems verification goes through openai-whisper (CUDA) or
+    # faster-whisper (CPU) -- see the "cuda" and "cpu-asr" extras.
+    "mlx-whisper>=0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+
+[project.optional-dependencies]
+# Verification on NVIDIA. openai-whisper rather than faster-whisper because the
+# aarch64 CTranslate2 wheel has no CUDA support and its CPU path is far too slow.
+cuda = ["openai-whisper>=20250625"]
+# Verification on a CPU-only machine.
+cpu-asr = ["faster-whisper>=1.2.1"]
+# ESpeech (f5-tts) and Chatterbox are deliberately NOT extras here. Both pin
+# older torch -- chatterbox-tts requires torch==2.6.0 -- so declaring them makes
+# the whole project unresolvable, since uv validates every extra against the
+# base requirements. They install into their own environments instead; see
+# docs/BACKENDS.md.
+
+[project.urls]
+Homepage = "https://github.com/romadinov/ebooker"
+Issues = "https://github.com/romadinov/ebooker/issues"
+
+[project.scripts]
+ebooker = "ebooker:main"
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"

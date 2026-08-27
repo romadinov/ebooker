@@ -1,0 +1,9 @@
+# Russian stress corrections, applied after RUAccent.
+#   word = m+arked      ('+' goes immediately before the stressed vowel)
+# Lines starting with # are ignored. Add entries as you hear mistakes.
+#
+# Note: single-word entries apply everywhere, so only use them for words with
+# one correct stress. Context-dependent cases (ноги, отсек) need a pattern in
+# PHRASE_OVERRIDES in src/ebooker/ru_stress.py instead.
+
+после = п+осле        # RUAccent's dictionary has посл+е, which is wrong

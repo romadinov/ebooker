@@ -1,0 +1,9 @@
+# Respellings for words the speech model reads wrong.
+#   written = respelled
+# Whole-word and case-insensitive; capitalisation of the original is preserved.
+# Lines starting with # are ignored. Add entries as you hear mistakes.
+#
+# Transliterated foreign names are the usual offenders: the model reads the
+# grapheme sequence, so no amount of stress marking fixes them -- only respelling.
+
+Иоган = Йоган          # "Иоган" is read as "и ганг"; "Йоган" is said correctly
