@@ -114,3 +114,30 @@ def test_stress_is_undetectable_by_asr():
     """
     assert V.cer("замок", "замок", "ru") == 0.0
     assert _flags("старый замок на двери", "старый замок на двери", "ru") == []
+
+
+def test_every_module_imports():
+    """Guards against a broken module hiding behind lazy imports.
+
+    A syntax error in normalise once passed 15 of 16 tests, because verify
+    imports it lazily inside one function and no test exercised that path.
+    """
+    import importlib
+    for name in ("ingest", "normalise", "verify", "master", "package",
+                 "device", "ru_stress", "cli", "synth", "synth.base"):
+        importlib.import_module(f"ebooker.{name}")
+
+
+def test_bare_numeral_chunks_are_merged():
+    """A chunk that is only a section number synthesises as silence."""
+    from ebooker import normalise as N
+    assert N._is_bare_numeral("четыре.", "ru")
+    assert N._is_bare_numeral("five.", "en")
+    assert not N._is_bare_numeral("– Жрет много?", "ru")
+    assert not N._is_bare_numeral("четыре часа спустя", "ru")
+
+    chunks, notes = N.chunk_paragraphs(
+        ["четыре.", "Он вошел в комнату иñ огляделся вокруг очень внимательно."],
+        "ru", 1)
+    assert not any(N._is_bare_numeral(c.text, "ru") for c in chunks)
+    assert any("numeral" in n for n in notes)

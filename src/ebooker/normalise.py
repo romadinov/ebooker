@@ -606,6 +606,68 @@ def _hard_split(sentence: str, limit: int) -> list[str]:
     return parts
 
 
+# Number words, for spotting a chunk that is nothing but a section marker.
+_NUM_WORD_RU = set("""
+ноль один одна одно два две три четыре пять шесть семь восемь девять десять
+одиннадцать двенадцать тринадцать четырнадцать пятнадцать шестнадцать
+семнадцать восемнадцать девятнадцать двадцать тридцать сорок пятьдесят
+шестьдесят семьдесят восемьдесят девяносто сто первый второй третий
+""".split())
+_NUM_WORD_EN = set("""
+zero one two three four five six seven eight nine ten eleven twelve thirteen
+fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty
+sixty seventy eighty ninety hundred first second third
+""".split())
+
+
+def _is_bare_numeral(text: str, lang: str) -> bool:
+    """A chunk that is only a number, e.g. the section marker "четыре."."""
+    words = re.findall(r"[^\W\d_]+", text, re.UNICODE)
+    if len(words) != 1:
+        return False
+    vocab = _NUM_WORD_RU if lang == "ru" else _NUM_WORD_EN
+    return words[0].lower() in vocab
+
+
+def _merge_bare_numerals(chunks: list["Chunk"], lang: str) -> tuple[list["Chunk"], int]:
+    """Fold lone section numbers into the chunk that follows them.
+
+    Measured: ESpeech returns *absolute silence* (peak 0.000) for a chunk whose
+    whole content is a short number word, and retrying with new seeds does not
+    help -- it is systematic, not stochastic. One book lost 22 section markers
+    that way. Other chunks of similar length ("– Жрет много?", 13 chars) render
+    fine, so it is the bare numeral rather than the brevity.
+
+    Merging keeps the number in the narration and lets it ride on a chunk large
+    enough for the model to handle.
+    """
+    if not chunks:
+        return chunks, 0
+    out: list[Chunk] = []
+    merged = 0
+    carry: str | None = None
+    for c in chunks:
+        if carry is not None:
+            c = Chunk(c.index, f"{carry} {c.text}", c.chapter_index,
+                      c.pause_ms, c.is_paragraph_end)
+            carry = None
+        if _is_bare_numeral(c.text, lang):
+            carry = c.text
+            merged += 1
+            continue
+        out.append(c)
+    if carry is not None:
+        # Trailing marker with nothing after it: attach to the previous chunk
+        # rather than dropping it.
+        if out:
+            last = out[-1]
+            out[-1] = Chunk(last.index, f"{last.text} {carry}", last.chapter_index,
+                            last.pause_ms, last.is_paragraph_end)
+        else:
+            merged -= 1
+    return out, merged
+
+
 def chunk_paragraphs(
     paragraphs: list[str], lang: str, chapter_index: int,
     max_chars: int = MAX_CHUNK_CHARS, start_index: int = 0,
@@ -659,4 +721,8 @@ def chunk_paragraphs(
             chunks[-1].pause_ms = PAUSE_PARAGRAPH
             chunks[-1].is_paragraph_end = True
 
+    chunks, n_merged = _merge_bare_numerals(chunks, lang)
+    if n_merged:
+        notes.append(f"{n_merged} bare section numeral(s) merged forward "
+                     f"(they synthesise as silence on their own)")
     return chunks, notes
