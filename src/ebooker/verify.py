@@ -47,6 +47,18 @@ class Checks:
 # text normalisation for fair comparison
 # --------------------------------------------------------------------------
 
+# Russian "one" and "two" are gendered, and num2words only produces the
+# masculine. So a source that says "две" (feminine) against an ASR that writes
+# "2" canonicalises to "две" versus "два" and reads as a dropped numeral. That
+# single mismatch produced 146 of 424 flags on one book -- a third of the whole
+# review list. Gendered forms fold to one representative on both sides.
+_RU_GENDER = {
+    "одна": "один", "одно": "один", "одну": "один", "одной": "один",
+    "две": "два", "двух": "два", "двум": "два", "двумя": "два",
+    "первая": "первый", "первое": "первый", "вторая": "второй",
+    "втором": "второй", "второе": "второй",
+}
+
 _PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 _WS = re.compile(r"\s+")
 
@@ -93,8 +105,11 @@ def canon(s: str, lang: str = "ru") -> str:
     s = _digits_to_words(s, lang)
     s = _PUNCT.sub(" ", s)
     s = _WS.sub(" ", s).strip()
-    if lang != "ru" and s:
-        s = " ".join(_SPELLING.get(w, w) for w in s.split())
+    if s:
+        if lang == "ru":
+            s = " ".join(_RU_GENDER.get(w, w) for w in s.split())
+        else:
+            s = " ".join(_SPELLING.get(w, w) for w in s.split())
     return s
 
 

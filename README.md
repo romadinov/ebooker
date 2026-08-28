@@ -137,6 +137,18 @@ none should be added to it. Cloning a real narrator's voice from a commercial
 audiobook is a thing this tool can technically do; publishing the result is
 not something it should be used for.
 
+## Tests
+
+```bash
+uv run pytest -q
+```
+
+`tests/test_verify.py` holds the verification regressions. Every case came from
+listening to real output and finding either a defect the checks missed or a
+correct rendering they wrongly flagged. The two halves pull against each other —
+loosening a rule to stop false alarms is what let real drops through — so they
+are kept together on purpose.
+
 ## Further reading
 
 [DESIGN.md](DESIGN.md) is the build log — what was measured, what turned out to
