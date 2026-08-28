@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import re
 import sys
 import time
@@ -21,6 +22,25 @@ def slugify(s: str, limit: int = 60) -> str:
     s = re.sub(r"[^\w\s.-]", "", s, flags=re.UNICODE).strip()
     s = re.sub(r"[\s_]+", "-", s)
     return re.sub(r"-{2,}", "-", s).strip("-")[:limit] or "book"
+
+
+def _current_rss_gb() -> float:
+    """Resident size right now.
+
+    Deliberately not resource.getrusage's ru_maxrss: that is a high-water mark
+    which never falls, so it cannot distinguish memory being accumulated from
+    memory merely peaking on a larger chapter.
+    """
+    try:
+        with open("/proc/self/status", encoding="utf-8") as fh:      # Linux
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / (1024 ** 2)
+    except OSError:
+        pass
+    import resource                                                  # macOS
+    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return r / (1024 ** 3) if sys.platform == "darwin" else r / (1024 ** 2)
 
 
 def parse_chapter_spec(spec: str, n: int) -> list[int]:
@@ -212,15 +232,29 @@ def cmd_convert(a: argparse.Namespace) -> int:
         sf.write(wav, mastered.audio, mastered.sample_rate, subtype="FLOAT")
         specs.append(package.ChapterSpec(ch.title, wav, mastered.seconds))
         audio_total += mastered.seconds
-        # ru_maxrss is bytes on macOS and kilobytes on Linux.
-        _rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        rss_gb = _rss / (1024 ** 3) if sys.platform == "darwin" else _rss / (1024 ** 2)
+        rss_gb = _current_rss_gb()
         # Append this chapter's review lines now. Holding them until the run
         # ends loses everything if it is interrupted, and makes a long run
         # impossible to inspect while it is going.
         if chapter_flags:
             with (work / "flagged.txt").open("a", encoding="utf-8") as fh:
                 fh.write("\n".join(chapter_flags) + "\n")
+
+        # Release the chapter's audio before starting the next one. Measured on
+        # a 10-chapter book in a single process: RSS climbed 15.3 -> 22.2 GB with
+        # current RSS within 2% of the peak, so nothing was being returned. A
+        # 128-chapter book in one process is an out-of-memory risk on that
+        # trajectory, so drop the references and collect explicitly.
+        pieces.clear()
+        del mastered
+        gc.collect()
+        if backend in ("espeech", "chatterbox"):
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
         print(f"  ch{ch.index:3} {len(chunks):4} chunks  {mastered.seconds/60:5.1f} min  "
               f"{time.perf_counter()-t0:6.1f}s  rss {rss_gb:4.1f}G  "
               f"RMS {mastered.stats['rms_after_dbfs']:5.1f} "
