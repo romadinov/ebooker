@@ -245,7 +245,10 @@ sixty seventy eighty ninety hundred thousand million billion point first second
 third fourth fifth
 """.split())
 
-LONG_WORD = 5           # content words at least this long must survive
+LONG_WORD = 4           # content words at least this long must survive
+# Measured: a four-letter word ("осле") went missing from a delivered book and
+# nothing flagged it -- at a floor of 5 it was not even examined. Dropping the
+# floor to 4 catches it while every clean regression case stays clean.
 
 
 def _stem(w: str) -> str:
@@ -599,9 +602,17 @@ def check(
         # One missing word is enough when it is long: ASR rarely loses an
         # 8+ character word outright, so its absence is real. Shorter words
         # need corroboration to avoid flagging ASR noise.
-        very_long = [w for w in lost_long if len(w) >= 7]
+        # One missing word is enough when it is long enough that the ASR is
+        # unlikely to lose it outright. Lowered from 7 to 5 for the same reason
+        # the floor moved: a single dropped short content word is exactly the
+        # failure that reached a delivered book unflagged.
+        very_long = [w for w in lost_long if len(w) >= 5]
         if very_long:
             reasons.append(f"word(s) not spoken: {', '.join(very_long[:4])}")
+        elif len(lost_long) >= 1 and score is not None and score > 0.02:
+            # A single 4-letter word missing, corroborated by a non-trivial CER.
+            reasons.append(f"word(s) possibly not spoken: {', '.join(lost_long[:4])} "
+                           f"(CER {score:.1%})")
         elif len(lost_long) >= 2:
             reasons.append(f"{len(lost_long)} long word(s) not spoken: "
                            f"{', '.join(lost_long[:4])}")

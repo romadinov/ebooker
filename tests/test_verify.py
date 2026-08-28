@@ -77,6 +77,14 @@ CLEAN = [
 
 # --- real defects that MUST be flagged -------------------------------------
 DEFECTIVE = [
+    # Reported by a listener on a delivered book: a four-letter word vanished
+    # from a 244-character chunk. Nothing flagged it -- at the old content-word
+    # floor of 5 it was not even examined, and 4 letters missing from 244 is
+    # about 1.6% CER. The underlying cause was chunk length (long chunks lose
+    # short words, see normalise.MAX_CHUNK_CHARS); this case guards the
+    # detection side.
+    ("ru", "Армянское радио спрашивают: можно ли доехать на осле от Ташкента до Москвы?",
+           "Армянское радио спрашивают: можно ли доехать на от Ташкента до Москвы?"),
     # A mangled numeral inside 149 characters scores only 5.4% CER, under any
     # sensible threshold -- which is why numerals are checked separately.
     ("ru", "поблизости оказавшиеся шестнадцать пассажиров тоже погибли и была часть",
