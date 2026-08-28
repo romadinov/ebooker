@@ -240,13 +240,20 @@ def cmd_convert(a: argparse.Namespace) -> int:
             with (work / "flagged.txt").open("a", encoding="utf-8") as fh:
                 fh.write("\n".join(chapter_flags) + "\n")
 
-        # Release the chapter's audio before starting the next one. Measured on
-        # a 10-chapter book in a single process: RSS climbed 15.3 -> 22.2 GB with
-        # current RSS within 2% of the peak, so nothing was being returned. A
-        # 128-chapter book in one process is an out-of-memory risk on that
-        # trajectory, so drop the references and collect explicitly.
+        print(f"  ch{ch.index:3} {len(chunks):4} chunks  {mastered.seconds/60:5.1f} min  "
+              f"{time.perf_counter()-t0:6.1f}s  rss {rss_gb:4.1f}G  "
+              f"RMS {mastered.stats['rms_after_dbfs']:5.1f} "
+              f"peak {mastered.stats['peak_after_dbfs']:5.1f} dBFS"
+              + (f"  [{retried} retries]" if retried else "")
+              + (f"  [{bad} flagged]" if bad else ""))
+
+        # Release the chapter's audio before starting the next one, AFTER the
+        # line above has read it. Measured on a 10-chapter book in one process:
+        # RSS climbed 15.3 -> 22.2 GB with current within 2% of peak, so nothing
+        # was being returned. This bounds the chapter-local buffers; the leak
+        # itself is per chunk, so a long run also needs the driver's restart.
         pieces.clear()
-        del mastered
+        mastered = None
         gc.collect()
         if backend in ("espeech", "chatterbox"):
             try:
@@ -255,12 +262,6 @@ def cmd_convert(a: argparse.Namespace) -> int:
                     torch.cuda.empty_cache()
             except Exception:
                 pass
-        print(f"  ch{ch.index:3} {len(chunks):4} chunks  {mastered.seconds/60:5.1f} min  "
-              f"{time.perf_counter()-t0:6.1f}s  rss {rss_gb:4.1f}G  "
-              f"RMS {mastered.stats['rms_after_dbfs']:5.1f} "
-              f"peak {mastered.stats['peak_after_dbfs']:5.1f} dBFS"
-              + (f"  [{retried} retries]" if retried else "")
-              + (f"  [{bad} flagged]" if bad else ""))
 
     elapsed = time.perf_counter() - t_start
     if a.render_only:
