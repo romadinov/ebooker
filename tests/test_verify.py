@@ -206,3 +206,24 @@ def test_per_sentence_cer_falls_back_when_sentences_do_not_align():
     worst, culprit = V.worst_sentence_cer(ref, hyp, "ru")
     assert culprit == "", "mismatched counts should fall back to whole-chunk CER"
     assert worst == V.cer(ref, hyp, "ru")
+
+
+def test_tail_loop_detection_is_correct_and_cheap():
+    """Repetition detection must keep its verdicts after moving to an FFT.
+
+    The direct np.correlate form is O(n^2): ~2.3e9 operations over 48,000
+    samples, measured at 166 s and 459 s for one call on an oversubscribed
+    machine against 0.2 s idle. The FFT form is equivalent and about three
+    orders of magnitude cheaper.
+    """
+    import time
+    rng = np.random.default_rng(0)
+    sr = 24000
+    speech = (rng.standard_normal(4 * sr) * 0.2).astype(np.float32)
+    looping = np.tile((rng.standard_normal(sr // 3) * 0.2).astype(np.float32), 12)
+
+    t0 = time.perf_counter()
+    assert V._tail_loop(speech, sr) is False, "ordinary speech is not a loop"
+    assert V._tail_loop(looping, sr) is True, "a repeating tail must be caught"
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 2.0, f"detection should be fast, took {elapsed:.1f}s"

@@ -427,7 +427,13 @@ def _tail_loop(audio: np.ndarray, sr: int, window: float = 1.0) -> bool:
     tail = tail - tail.mean()
     if not np.any(tail):
         return False
-    ac = np.correlate(tail, tail, mode="full")[len(tail) - 1:]
+    # Via FFT, not np.correlate. The direct form is O(n^2): over 48,000 samples
+    # that is ~2.3e9 operations, measured at 166 s and 459 s for a single call
+    # when the machine was oversubscribed (0.2 s idle). Identical result, about
+    # three orders of magnitude fewer operations.
+    m = 1 << (2 * len(tail) - 1).bit_length()
+    spec = np.fft.rfft(tail, n=m)
+    ac = np.fft.irfft(spec * np.conjugate(spec), n=m)[:len(tail)]
     ac /= ac[0] or 1.0
     lo, hi = int(0.08 * sr), min(int(0.9 * sr), len(ac) - 1)
     if hi <= lo:

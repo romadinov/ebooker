@@ -69,6 +69,43 @@ def _shim_torchaudio() -> None:
     torchaudio._ebooker_shimmed = True
 
 
+def _route_convs_around_cudnn(model) -> None:
+    """Run this model's convolutions without cuDNN.
+
+    PyTorch's cuDNN convolution backend leaks host memory on every call on this
+    stack (torch 2.13.0+cu130, cuDNN 9, GB10/sm_121): roughly 30 kB per
+    convolution, never returned, whatever the tensor shape. The DiT calls its
+    grouped Conv1d layers 128 times per chunk -- 32 NFE steps x 2 CFG branches
+    x 2 layers -- so every chunk costs ~3.9 MB of resident memory that is never
+    freed. Over a 128-chapter book that is tens of gigabytes.
+
+    Measured on a GB10, 120 chunks per run, transcription disabled:
+
+        cuDNN convolutions          3.85 MB/chunk   99 s
+        routed around cuDNN         0.01 MB/chunk   96 s
+
+    Free, in other words: the DiT is matmul-bound and these six convolutions
+    are a rounding error in its runtime. Scoped to this model rather than set
+    globally, so Whisper's encoder keeps its cuDNN path.
+
+    Note this selects a different convolution kernel, so a fixed seed will not
+    reproduce pre-patch audio byte for byte. Same operation and dtype -- no
+    quality implication.
+    """
+    import torch
+    from torch import nn
+
+    for m in model.modules():
+        if isinstance(m, (nn.Conv1d, nn.Conv2d, nn.ConvTranspose1d)):
+            inner = m.forward
+
+            def forward(*args, _inner=inner, **kwargs):
+                with torch.backends.cudnn.flags(enabled=False):
+                    return _inner(*args, **kwargs)
+
+            m.forward = forward
+
+
 class ESpeech:
     name = "espeech"
     sample_rate = 24000
@@ -119,6 +156,8 @@ class ESpeech:
         ckpt = hf_hub_download(repo_id=repo, filename=fname)
         vocab = hf_hub_download(repo_id=repo, filename="vocab.txt")
         self.model = load_model(DiT, MODEL_CFG, ckpt, vocab_file=vocab, device=device)
+        if device == "cuda":
+            _route_convs_around_cudnn(self.model)
         self.ref_audio, self.ref_text = preprocess_ref_audio_text(
             str(reference), reference_text)
         self.batch_budget_bytes = self._budget()
