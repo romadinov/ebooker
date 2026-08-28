@@ -22,9 +22,21 @@ from dataclasses import dataclass
 
 from num2words import num2words
 
-# Chatterbox stays coherent well below its ~30s ceiling; ~250 chars of Russian
-# is roughly 17s of speech.
-MAX_CHUNK_CHARS = 250
+# Chunk length trades fidelity for throughput, and 250 was too far toward
+# throughput. Measured on a real chunk where a four-letter word went missing
+# from a delivered book, synthesising the same text at three chunk sizes with
+# three seeds each:
+#
+#   244 chars -> the word survived 2 of 3 seeds
+#   102 chars -> 3 of 3
+#    94 chars -> 3 of 3
+#
+# The same sentence on its own survived 3 of 3 under every stress-marking
+# variant, so neither the wording nor the accentuation was at fault: long
+# chunks simply lose short words. Small sample -- one word, three seeds -- so
+# treat 160 as a safer operating point rather than a precisely tuned optimum.
+# Shorter chunks cost proportionally more verification calls.
+MAX_CHUNK_CHARS = 160
 MIN_CHUNK_CHARS = 40
 
 RU_LETTERS = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"

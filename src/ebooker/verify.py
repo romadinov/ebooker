@@ -525,10 +525,17 @@ def _pick_asr_backend() -> str:
 
 
 def _resample(x: np.ndarray, src: int, dst: int) -> np.ndarray:
-    """Linear resample. Adequate for ASR input; not used on delivered audio."""
-    if src == dst:
+    """Linear resample. Adequate for ASR input; not used on delivered audio.
+
+    Guards degenerate input. The synthesis backend can return an empty or
+    zero-dimensional array -- ESpeech does exactly that for some chunks -- and
+    np.interp then raises "object of too small depth for desired array",
+    killing the whole run instead of letting that one chunk be flagged.
+    """
+    x = np.asarray(x, dtype=np.float32).reshape(-1)
+    if x.size < 2 or src == dst:
         return x
-    n = int(round(x.size * dst / src))
+    n = max(1, int(round(x.size * dst / src)))
     return np.interp(np.linspace(0, x.size - 1, n),
                      np.arange(x.size), x).astype(np.float32)
 
@@ -569,9 +576,16 @@ def check(
         elif len(text) < 70:
             cer_threshold *= 1.5
 
+    audio = np.asarray(audio, dtype=np.float32).reshape(-1)
     reasons = signal_checks(audio, sample_rate, text, cps=cps)
     score = None
     transcript = ""
+    # Nothing to transcribe, and asking the ASR to try would either raise or
+    # hallucinate. Empty output is already a failure the retry loop should see.
+    if audio.size < sample_rate // 100:
+        if "empty audio" not in reasons:
+            reasons.append(f"almost no audio ({audio.size} samples)")
+        return Checks(ok=False, cer=None, transcript="", reasons=reasons)
     if transcriber is not None:
         transcript = transcriber(audio, sample_rate, lang)
         score = cer(text, transcript, lang)

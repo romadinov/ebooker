@@ -141,3 +141,27 @@ def test_bare_numeral_chunks_are_merged():
         "ru", 1)
     assert not any(N._is_bare_numeral(c.text, "ru") for c in chunks)
     assert any("numeral" in n for n in notes)
+
+
+@pytest.mark.parametrize("audio,label", [
+    (np.zeros(0, dtype=np.float32), "empty"),
+    (np.zeros(1, dtype=np.float32), "one sample"),
+    (np.array(0.0, dtype=np.float32), "zero-dimensional"),
+    (np.zeros(240, dtype=np.float32), "10 ms"),
+])
+def test_degenerate_audio_flags_rather_than_raising(audio, label):
+    """One bad chunk must not kill a run.
+
+    The synthesis backend genuinely returns empty output for some inputs, and
+    np.interp raised "object of too small depth for desired array" on it,
+    taking down a whole book instead of letting the retry loop see a failed
+    chunk. Nine chapters of a 102-chapter book were lost to that.
+    """
+    result = V.check(audio, 24000, "четыре.", "ru", transcriber=None)
+    assert not result.ok, f"{label} should be flagged"
+    assert result.reasons
+
+
+def test_resample_handles_degenerate_input():
+    assert V._resample(np.zeros(0, dtype=np.float32), 24000, 16000).shape == (0,)
+    assert V._resample(np.array(0.0, dtype=np.float32), 24000, 16000).shape == (1,)

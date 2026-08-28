@@ -37,9 +37,12 @@ VARIANTS = {
 }
 MODEL_CFG = dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)
 
-# ESpeech at speed 1.0 reads at ~21 chars/second against Silero's ~14, which is
-# fast for narration. 0.82 lands near 18.
-DEFAULT_SPEED = 0.82
+# ESpeech reads fast. Measured on a finished book: 18.7 chars/second at speed
+# 0.90, where audiobook narration sits at 14-16 -- about 25% over, and audibly
+# so. 0.72 lands near 15. Note the rate also inherits from the reference clip's
+# own delivery, so re-measure if the reference changes: chars/second over a
+# rendered chapter is the check.
+DEFAULT_SPEED = 0.72
 
 
 def _shim_torchaudio() -> None:
@@ -193,7 +196,10 @@ class ESpeech:
                 cross_fade_duration=0.15)
             chunks.append(np.asarray(wav, dtype=np.float32))
         dt = time.perf_counter() - t0
-        arr = (chunks[0] if len(chunks) == 1
+        chunks = [np.asarray(c, dtype=np.float32).reshape(-1) for c in chunks]
+        chunks = [c for c in chunks if c.size]
+        arr = (np.zeros(0, dtype=np.float32) if not chunks
+               else chunks[0] if len(chunks) == 1
                else np.concatenate(chunks).astype(np.float32))
         self.sample_rate = sr
 
