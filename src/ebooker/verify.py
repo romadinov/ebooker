@@ -245,7 +245,7 @@ sixty seventy eighty ninety hundred thousand million billion point first second
 third fourth fifth
 """.split())
 
-LONG_WORD = 4           # content words at least this long must survive
+LONG_WORD = 2           # content words at least this long must survive
 # Measured: a four-letter word ("осле") went missing from a delivered book and
 # nothing flagged it -- at a floor of 5 it was not even examined. Dropping the
 # floor to 4 catches it while every clean regression case stays clean.
@@ -343,7 +343,40 @@ def missing_words(reference: str, hypothesis: str, lang: str = "ru") -> tuple[li
     return missing_nums, missing_long
 
 
+def _sentences(text: str) -> list[str]:
+    """Split for comparison purposes. Deliberately cruder than the synthesis
+    splitter: it only needs both sides cut the same way."""
+    parts = re.split(r"(?<=[.!?…])\s+", text.strip())
+    return [p for p in (x.strip() for x in parts) if p]
+
+
+def worst_sentence_cer(reference: str, hypothesis: str,
+                       lang: str = "ru") -> tuple[float, str]:
+    """Highest per-sentence CER in a chunk, with the sentence responsible.
+
+    CER over a whole chunk dilutes localised damage: a four-letter word lost
+    from 244 characters scores 1.6%, which no useful threshold can catch.
+    Measured on that case, scoring the offending sentence alone gives 6.85% --
+    2.5x more sensitive for the same error.
+
+    Only meaningful when both sides split into the same number of sentences.
+    The ASR merges or splits sentences fairly often, and a misaligned pairing
+    would compare unrelated text and report enormous error, so a mismatch falls
+    back to whole-chunk CER rather than guessing an alignment.
+    """
+    ref_s, hyp_s = _sentences(reference), _sentences(hypothesis)
+    if len(ref_s) < 2 or len(ref_s) != len(hyp_s):
+        return cer(reference, hypothesis, lang), ""
+    worst, culprit = 0.0, ""
+    for r, h in zip(ref_s, hyp_s):
+        c = cer(r, h, lang)
+        if c > worst:
+            worst, culprit = c, r
+    return worst, culprit
+
+
 # --------------------------------------------------------------------------
+# signal-level checks (no model needed)# --------------------------------------------------------------------------
 # signal-level checks (no model needed)
 # --------------------------------------------------------------------------
 
@@ -594,6 +627,21 @@ def check(
         score = cer(text, transcript, lang)
         if score > cer_threshold:
             reasons.append(f"CER {score:.1%} over {cer_threshold:.0%} threshold")
+        else:
+            # Whole-chunk CER hides localised damage, so score each sentence
+            # separately too. The threshold for a single sentence is the
+            # length-scaled one for that sentence, not for the whole chunk.
+            worst, culprit = worst_sentence_cer(text, transcript, lang)
+            if culprit:
+                sent_threshold = 0.14 if lang == "ru" else 0.08
+                if len(culprit) < 30:
+                    sent_threshold *= 2.2
+                elif len(culprit) < 70:
+                    sent_threshold *= 1.5
+                if worst > sent_threshold:
+                    reasons.append(
+                        f"one sentence at CER {worst:.1%} over "
+                        f"{sent_threshold:.0%}: {culprit[:44]!r}")
         # Not length-normalised, so a single mangled word in a long chunk is
         # still caught. Any lost numeral is fatal on its own.
         lost_nums, lost_long = missing_words(text, transcript, lang)

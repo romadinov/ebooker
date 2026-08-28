@@ -73,6 +73,9 @@ CLEAN = [
     # Clock times: "8.30am" must fold to the same words the model was given.
     ("en", "It departs at eight thirty in the morning we suggest you arrive",
            "It departs at 8.30am. We suggest you arrive"),
+    # Several sentences, only ё/е and nothing else different.
+    ("ru", "Он ушел домой рано утром. Она осталась в комнате одна. Потом стало совсем тихо.",
+           "Он ушёл домой рано утром. Она осталась в комнате одна. Потом стало совсем тихо."),
 ]
 
 # --- real defects that MUST be flagged -------------------------------------
@@ -100,6 +103,14 @@ DEFECTIVE = [
            "Пассажиры поднимались на Йоганн Кеплер и обретали 92 дня."),
     ("en", "Your shuttle leaves in thirty minutes from right in front of this office",
            "Your shuttle leaves in minutes from right in front of this office"),
+    # Only per-sentence CER catches this: the same dropped word inside three
+    # sentences scores 2.8% over the whole chunk but 6.9% on its own sentence.
+    ("ru", "Прежде всего осел ассоциировался со Средней Азией. "
+           "Армянское радио спрашивают: можно ли доехать на осле от Ташкента до Москвы? "
+           "Отвечаем: доехать можно, но это займет много времени.",
+           "Прежде всего осел ассоциировался со Средней Азией. "
+           "Армянское радио спрашивают: можно ли доехать на от Ташкента до Москвы? "
+           "Отвечаем: доехать можно, но это займет много времени."),
 ]
 
 
@@ -173,3 +184,25 @@ def test_degenerate_audio_flags_rather_than_raising(audio, label):
 def test_resample_handles_degenerate_input():
     assert V._resample(np.zeros(0, dtype=np.float32), 24000, 16000).shape == (0,)
     assert V._resample(np.array(0.0, dtype=np.float32), 24000, 16000).shape == (1,)
+
+
+def test_per_sentence_cer_is_more_sensitive_than_whole_chunk():
+    """Averaging over a chunk hides localised damage."""
+    src = ("Прежде всего осел ассоциировался со Средней Азией. "
+           "Армянское радио спрашивают: можно ли доехать на осле от Ташкента до Москвы? "
+           "Отвечаем: доехать можно, но это займет много времени.")
+    heard = src.replace(" на осле ", " на ")
+    whole = V.cer(src, heard, "ru")
+    worst, culprit = V.worst_sentence_cer(src, heard, "ru")
+    assert worst > whole * 2, "per-sentence scoring should be markedly sharper"
+    assert "осле" in culprit, "should name the sentence at fault"
+
+
+def test_per_sentence_cer_falls_back_when_sentences_do_not_align():
+    """The ASR merges sentences; a misaligned pairing would compare unrelated
+    text and report enormous error, so a count mismatch must fall back."""
+    ref = "Он ушел. Она осталась. Стало тихо."
+    hyp = "Он ушел, она осталась, стало тихо."
+    worst, culprit = V.worst_sentence_cer(ref, hyp, "ru")
+    assert culprit == "", "mismatched counts should fall back to whole-chunk CER"
+    assert worst == V.cer(ref, hyp, "ru")
