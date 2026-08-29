@@ -19,3 +19,12 @@ cbx/
 kok/
 cosy/
 .DS_Store
+
+# per-run driver scripts and their logs (machine- and book-specific)
+log_*.log
+redo_*.sh
+redo_*.log
+rerender.sh
+rerender.log
+books*.sh
+books*.log
