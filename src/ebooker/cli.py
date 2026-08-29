@@ -202,8 +202,11 @@ def cmd_convert(a: argparse.Namespace) -> int:
         chapter_flags: list[str] = []
         bad = 0
         retried = 0
+        nonfinite = 0
         for c in chunks:
             r = tts.synth(c.text, lang=lang, seed=a.seed)
+            r.audio, n_bad = master.sanitise(r.audio)
+            nonfinite += n_bad
             if transcriber is not None:
                 for attempt in range(a.retries + 1):
                     chk = verify_mod.check(r.audio, r.sample_rate, c.text, lang,
@@ -226,6 +229,12 @@ def cmd_convert(a: argparse.Namespace) -> int:
                 # are dominated by onset and trailing silence.
                 cps_samples.append(len(c.text) / r.seconds)
             pieces.append((r.audio, c.pause_ms))
+
+        if nonfinite:
+            line = (f"ch{ch.index}: {nonfinite} non-finite sample(s) "
+                    f"replaced with silence")
+            flagged.append(line)
+            chapter_flags.append(line)
 
         mastered = master.assemble(pieces, tts.sample_rate)
         # float WAV: PCM_16 would clamp over-unity peaks that mastering repairs.

@@ -28,6 +28,23 @@ TRIM_DB = -45.0             # below this counts as silence for trimming
 TRIM_KEEP_MS = 40           # leave a little air so words are not clipped
 
 
+def sanitise(x: np.ndarray) -> tuple[np.ndarray, int]:
+    """Replace non-finite samples with silence, reporting how many there were.
+
+    The vocoder emits an isolated NaN or Inf every few million samples -- one to
+    four per chapter, measured across 240 chapters. Inaudible in itself (a
+    single sample is 0.04 ms), but the AAC encoder rejects any frame containing
+    one and aborts, so a whole book fails to package after it has finished
+    rendering. Non-finite values also poison the RMS and peak statistics that
+    mastering and verification depend on, so this runs before either.
+    """
+    finite = np.isfinite(x)
+    bad = int(finite.size - int(finite.sum()))
+    if bad:
+        x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+    return x, bad
+
+
 def db_to_lin(db: float) -> float:
     return float(10.0 ** (db / 20.0))
 
