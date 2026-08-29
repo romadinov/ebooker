@@ -358,3 +358,8 @@ def main(argv: list[str] | None = None) -> int:
 
     a = p.parse_args(argv)
     return a.fn(a)
+
+
+if __name__ == "__main__":  # `python -m ebooker.cli`
+    import sys
+    sys.exit(main(sys.argv[1:]))
