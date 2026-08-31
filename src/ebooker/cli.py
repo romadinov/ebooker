@@ -150,6 +150,12 @@ def cmd_convert(a: argparse.Namespace) -> int:
         kw = {"lang_code": LANG_CODES.get(lang, "a")}
         if a.voice:
             kw["voice"] = a.voice
+    elif backend == "higgs":
+        if not a.voice:
+            print("error: --backend higgs needs --voice <reference.wav>",
+                  file=sys.stderr)
+            return 2
+        kw = {"reference": a.voice, "device": a.device}
     elif backend == "espeech":
         if not a.voice:
             print("error: --backend espeech needs --voice <reference.wav>",
@@ -326,7 +332,8 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("convert", help="convert an EPUB to an M4B")
     c.add_argument("epub")
     c.add_argument("--backend", default=None,
-                   choices=("silero", "kokoro", "espeech", "chatterbox"),
+                   choices=("silero", "kokoro", "espeech", "chatterbox",
+                            "higgs"),
                    help="default: chosen per language (ru->silero, en->kokoro)")
     c.add_argument("--variant", default="rlv2", choices=("rlv2", "sft"),
                    help="espeech only: which checkpoint")

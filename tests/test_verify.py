@@ -227,3 +227,48 @@ def test_tail_loop_detection_is_correct_and_cheap():
     assert V._tail_loop(looping, sr) is True, "a repeating tail must be caught"
     elapsed = time.perf_counter() - t0
     assert elapsed < 2.0, f"detection should be fast, took {elapsed:.1f}s"
+
+
+# --- sparse acute marking -------------------------------------------------
+# The notation that Higgs accepts. "+" is unusable there: the model reads the
+# plus signs aloud ("плюс"), producing 81.6s of output for a 10s passage.
+
+def test_to_acute_sparse_skips_yo_words():
+    # ё is inherently stressed, so an acute on it is redundant notation.
+    from ebooker.ru_stress import to_acute_sparse
+    assert to_acute_sparse("пош+ёл") == "пошёл"
+    assert to_acute_sparse("ч+ёрный") == "чёрный"
+
+
+def test_to_acute_sparse_skips_monosyllables_and_clitics():
+    from ebooker.ru_stress import to_acute_sparse
+    # Nothing to disambiguate in a one-vowel word, and clitics are unstressed;
+    # marking them is a candidate cause of every-word-emphasised delivery.
+    assert to_acute_sparse("+он") == "он"
+    assert to_acute_sparse("н+а") == "на"
+    assert to_acute_sparse("гд+е") == "где"
+
+
+def test_to_acute_sparse_marks_real_content_words():
+    from ebooker.ru_stress import to_acute_sparse
+    assert to_acute_sparse("П+осле") == "По́сле"
+    assert to_acute_sparse("отс+ек") == "отсе́к"
+    assert to_acute_sparse("л+ампа") == "ла́мпа"
+
+
+def test_to_acute_sparse_never_emits_plus():
+    from ebooker.ru_stress import to_acute_sparse
+    marked = ("П+осле д+олгой дор+оги +он с труд+ом подн+ялся н+а н+оги. "
+              "+Он пош+ёл в ч+ёрный отс+ек.")
+    out = to_acute_sparse(marked)
+    assert "+" not in out, "a stray + would be vocalised as 'плюс'"
+
+
+def test_to_acute_sparse_preserves_punctuation_and_words():
+    from ebooker.ru_stress import to_acute_sparse
+    src = "П+осле д+олгой дор+оги, гд+е вс+ё ещ+ё гор+ела л+ампа!"
+    out = to_acute_sparse(src)
+    # Same letters and punctuation, only stress notation differs.
+    strip = lambda s: s.replace("+", "").replace("́", "")
+    assert strip(out) == strip(src)
+    assert out.endswith("!")

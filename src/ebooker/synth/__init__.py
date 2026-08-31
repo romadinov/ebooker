@@ -46,4 +46,19 @@ def get_backend(name: str, **kw) -> Backend:
     if name == "chatterbox":
         from .chatterbox import Chatterbox
         return Chatterbox(**kw)
+    if name == "higgs":
+        # Deliberately absent from BACKENDS: the Higgs weights are under a
+        # research/non-commercial licence incompatible with this project's MIT
+        # licence, so synth/higgs.py is not published. It stays reachable by
+        # name for local use, with an explanatory failure if the file is absent.
+        try:
+            from .higgs import Higgs
+        except ImportError as e:
+            raise ValueError(
+                "the 'higgs' backend is local-only and not part of this "
+                "repository: its weights are research/non-commercial "
+                "(Boson Higgs TTS 3 licence), which MIT cannot carry. "
+                f"Supply src/ebooker/synth/higgs.py yourself to use it ({e})."
+            ) from e
+        return Higgs(**kw)
     raise ValueError(f"unknown backend: {name!r}, expected one of {BACKENDS}")

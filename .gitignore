@@ -28,3 +28,8 @@ rerender.sh
 rerender.log
 books*.sh
 books*.log
+
+# Higgs backend: weights are research/non-commercial (Boson Higgs TTS 3
+# licence), which is incompatible with this project's MIT licence. Kept
+# local-only and never published.
+src/ebooker/synth/higgs.py

@@ -156,6 +156,68 @@ class Accentuator:
         return _tidy(primary)
 
 
+class SileroAccentuator:
+    """silero-stress wrapper producing the same '+' marked text as Accentuator.
+
+    Added alongside RUAccent rather than replacing it, because measured against
+    each other on 2,582 words of real book text they disagree 2.71% of the time
+    and neither is uniformly better: silero is right on "теб+е", "п+еред",
+    "спл+етен"; RUAccent is right on "глаз+а", "од+ин".
+
+    Two things silero does do better, and they are why it exists here:
+
+    1. **It restores ё.** Russian print routinely substitutes е -- one book in
+       this corpus contains a single ё against 49,913 е. Since ё is always
+       stressed, every unrestored "пошел" is a stress error that no TTS model
+       can avoid, because the information is not in the text.
+    2. **It needs no override list to get the reported failures right.** после,
+       на ноги, отсек and the замок/замок pair all come out correct unaided.
+
+    The override dictionaries still apply on top, so corrections already learned
+    are not lost.
+    """
+
+    def __init__(self, overrides: dict[str, str] | None = None,
+                 overrides_file: str | None = None):
+        from silero_stress import load_accentor
+
+        self.overrides = {**OVERRIDES, **load_overrides_file(overrides_file),
+                          **(overrides or {})}
+        self._accentor = load_accentor()
+
+    def mark(self, text: str) -> str:
+        marked = self._accentor(text)
+        marked = _apply_overrides(marked, self.overrides)
+        marked = _apply_phrase_overrides(marked)
+        return _tidy(marked)
+
+
+def to_acute_sparse(marked: str) -> str:
+    """Acute marks, but only where they carry information.
+
+    to_acute() marks every stressed vowel. That is right for a model that wants
+    exhaustive marking, but silero marks nearly every word -- including "н+е",
+    "+и", "т+ы" -- and marking function words is a candidate cause of the
+    every-word-emphasised delivery that reads as mechanical. Russian reduces
+    unstressed function words; notation that insists on all of them fights that.
+
+    Dropped, in order of how little they add:
+      * words containing ё -- ё is inherently stressed, the mark is redundant
+      * monosyllables -- there is nothing to disambiguate
+      * clitics -- unstressed by nature (see CLITICS)
+    """
+    out = []
+    for token in marked.split(" "):
+        bare = token.replace(STRESS, "")
+        word = bare.lower().strip(".,!?;:—-«»\"'()[]…")
+        vowels = sum(c in "аеёиоуыэюя" for c in word)
+        if "ё" in word or vowels < 2 or word in CLITICS:
+            out.append(bare)
+        else:
+            out.append(to_acute(token))
+    return " ".join(out)
+
+
 DEFAULT_OVERRIDES_FILE = "stress_overrides.txt"
 
 
