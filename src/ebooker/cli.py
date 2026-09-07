@@ -108,6 +108,9 @@ def cmd_convert(a: argparse.Namespace) -> int:
     # American voice and 3-19 in a British one, with nothing to warn you.
     render_id = "-".join(str(x) for x in
                          (backend, a.voice or "default", a.variant if backend == "espeech" else "",
+                          # Stress marker changes the audio, so it must change
+                          # the key: silero restores ё where RUAccent does not.
+                          a.stress if (lang == "ru" and a.stress != "ruaccent") else "",
                           f"s{a.speed}" if a.speed else "", f"c{a.max_chars}")
                          if x)
     work = Path(a.work) / slug / slugify(render_id, limit=80)
@@ -162,7 +165,8 @@ def cmd_convert(a: argparse.Namespace) -> int:
             print("error: --backend espeech needs --voice <reference.wav>",
                   file=sys.stderr)
             return 2
-        kw = {"reference": a.voice, "variant": a.variant, "device": a.device}
+        kw = {"reference": a.voice, "variant": a.variant, "device": a.device,
+              "stress": a.stress}
         if a.speed:
             kw["speed"] = a.speed
     elif a.voice:
@@ -220,8 +224,14 @@ def cmd_convert(a: argparse.Namespace) -> int:
         chunk_dir.mkdir(parents=True, exist_ok=True)
         reused = 0
 
+        # The chunk key must cover the synthesis settings, not just the text.
+        # Keyed on text alone, changing temperature would silently reuse audio
+        # generated under the old setting -- which is exactly the mistake that
+        # would have kept 7.7% runaway chunks after fixing the cause.
+        synth_key = str(getattr(tts, "cache_key", getattr(tts, "name", "")))
         for c in chunks:
-            digest = hashlib.sha1(c.text.encode("utf-8")).hexdigest()[:12]
+            digest = hashlib.sha1(
+                (synth_key + "\x00" + c.text).encode("utf-8")).hexdigest()[:12]
             cpath = chunk_dir / f"c{c.index:04d}-{digest}.wav"
             if cpath.exists():
                 try:
@@ -380,7 +390,10 @@ def main(argv: list[str] | None = None) -> int:
                    choices=("silero", "kokoro", "espeech", "chatterbox",
                             "higgs"),
                    help="default: chosen per language (ru->silero, en->kokoro)")
-    c.add_argument("--variant", default="rlv2", choices=("rlv2", "sft"),
+    c.add_argument("--stress", default="ruaccent",
+                   choices=("ruaccent", "silero", "none"),
+                   help="Russian stress marker; silero also restores ё")
+    c.add_argument("--variant", default="rlv2", choices=("rlv1", "rlv2", "sft95k", "podcaster", "sft"),
                    help="espeech only: which checkpoint")
     c.add_argument("--device", default="auto",
                    help="cuda | mps | cpu | auto (default: detect)")

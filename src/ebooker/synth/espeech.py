@@ -31,8 +31,16 @@ import numpy as np
 
 from .base import Result
 
+# All five published checkpoints. Only two were wired up before, and the one
+# every shipped book used -- "sft" (SFT-256K) -- scores lowest of the four
+# measured in the RuASD evaluation: RL-V1 4.85, SFT-95K 4.83, RL-V2 4.80,
+# SFT-256K 4.76 MOS. "podcaster" is trained solely on podcasts and aims at
+# spontaneous delivery, which is the axis the narration was criticised on.
 VARIANTS = {
+    "rlv1": ("ESpeech/ESpeech-TTS-1_RL-V1", "espeech_tts_rlv1.pt"),
     "rlv2": ("ESpeech/ESpeech-TTS-1_RL-V2", "espeech_tts_rlv2.pt"),
+    "sft95k": ("ESpeech/ESpeech-TTS-1_SFT-95K", "espeech_tts_95k.pt"),
+    "podcaster": ("ESpeech/ESpeech-TTS-1_podcaster", "espeech_tts_podcaster.pt"),
     "sft": ("ESpeech/ESpeech-TTS-1_SFT-256K", "espeech_tts_256k.pt"),
 }
 MODEL_CFG = dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)
@@ -142,6 +150,13 @@ class ESpeech:
         if stress == "ruaccent":
             from ..ru_stress import Accentuator
             self._accent = Accentuator()
+        elif stress == "silero":
+            # Restores ё as well as placing stress. ё is always stressed, so in
+            # a text that prints е throughout -- one book here has 10 ё against
+            # 24,239 е -- every unrestored word is a stress error that no model
+            # can recover, because the information is absent from the input.
+            from ..ru_stress import SileroAccentuator
+            self._accent = SileroAccentuator()
 
         # Reference transcript: read from a sibling .txt if not supplied.
         if reference_text is None:
