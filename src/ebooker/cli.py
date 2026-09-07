@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import re
 import sys
 import time
@@ -209,7 +210,29 @@ def cmd_convert(a: argparse.Namespace) -> int:
         bad = 0
         retried = 0
         nonfinite = 0
+        # Chunk-level cache. Chapters are the natural unit at 0.1 RTF, where a
+        # chapter is minutes of work. At 3.5 RTF one chapter of this corpus is
+        # three hours, so an interruption forfeits all of it -- measured: 2h20m
+        # lost to a single stop 62% through a 448-chunk chapter. Keyed on a hash
+        # of the chunk text, so edited text invalidates itself rather than
+        # silently serving stale audio. Removed once the chapter wav exists.
+        chunk_dir = work / f"chunks-ch{ch.index:03d}"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+        reused = 0
+
         for c in chunks:
+            digest = hashlib.sha1(c.text.encode("utf-8")).hexdigest()[:12]
+            cpath = chunk_dir / f"c{c.index:04d}-{digest}.wav"
+            if cpath.exists():
+                try:
+                    cached, csr = sf.read(cpath, dtype="float32", always_2d=False)
+                    if cached.size and np.isfinite(cached).all():
+                        pieces.append((cached, c.pause_ms))
+                        reused += 1
+                        continue
+                except Exception:
+                    cpath.unlink(missing_ok=True)   # truncated by a hard kill
+
             r = tts.synth(c.text, lang=lang, seed=a.seed)
             r.audio, n_bad = master.sanitise(r.audio)
             nonfinite += n_bad
@@ -230,11 +253,30 @@ def cmd_convert(a: argparse.Namespace) -> int:
                             f"{'; '.join(chk.reasons)} :: {c.text[:60]}")
                     flagged.append(line)
                     chapter_flags.append(line)
+            # Heartbeat. Chapter-granularity logging is fine at 0.1 RTF but
+            # leaves a slow backend silent for half an hour, during which a
+            # stalled run and a working one look identical.
+            if c.index and c.index % 10 == 0:
+                done = sum(p[0].size for p in pieces) / tts.sample_rate
+                el = time.perf_counter() - t0
+                print(f"    ch{ch.index} chunk {c.index}/{len(chunks)}  "
+                      f"{done/60:.1f} min audio  {el/60:.1f} min elapsed  "
+                      f"rtf {el/max(done, 1e-6):.2f}", flush=True)
             if r.seconds > 0.05 and len(c.text) >= 40:
                 # Only well-sized chunks inform the rate estimate; short ones
                 # are dominated by onset and trailing silence.
                 cps_samples.append(len(c.text) / r.seconds)
+            # format is explicit: soundfile infers it from the extension, and
+            # the ".part" suffix (needed so a kill mid-write cannot leave a
+            # half-file that reads as valid) carries no format information.
+            tmp = cpath.with_suffix(".part")
+            sf.write(tmp, r.audio, r.sample_rate, subtype="FLOAT", format="WAV")
+            tmp.replace(cpath)
             pieces.append((r.audio, c.pause_ms))
+
+        if reused:
+            print(f"    ch{ch.index} reused {reused}/{len(chunks)} cached chunks",
+                  flush=True)
 
         if nonfinite:
             line = (f"ch{ch.index}: {nonfinite} non-finite sample(s) "
@@ -245,6 +287,9 @@ def cmd_convert(a: argparse.Namespace) -> int:
         mastered = master.assemble(pieces, tts.sample_rate)
         # float WAV: PCM_16 would clamp over-unity peaks that mastering repairs.
         sf.write(wav, mastered.audio, mastered.sample_rate, subtype="FLOAT")
+        for stale in chunk_dir.glob("c*.wav"):
+            stale.unlink(missing_ok=True)
+        chunk_dir.rmdir() if not any(chunk_dir.iterdir()) else None
         specs.append(package.ChapterSpec(ch.title, wav, mastered.seconds))
         audio_total += mastered.seconds
         rss_gb = _current_rss_gb()
