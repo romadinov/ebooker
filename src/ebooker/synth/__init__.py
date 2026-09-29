@@ -46,6 +46,18 @@ def get_backend(name: str, **kw) -> Backend:
     if name == "chatterbox":
         from .chatterbox import Chatterbox
         return Chatterbox(**kw)
+    if name == "omnivoice":
+        # Absent from BACKENDS for the same reason as higgs: the model
+        # repository declares no licence, so it is not published here.
+        try:
+            from .omnivoice import OmniVoice
+        except ImportError as e:
+            raise ValueError(
+                "the 'omnivoice' backend is local-only and not part of this "
+                "repository: the upstream model declares no licence. "
+                f"Supply src/ebooker/synth/omnivoice.py yourself to use it ({e})."
+            ) from e
+        return OmniVoice(**kw)
     if name == "higgs":
         # Deliberately absent from BACKENDS: the Higgs weights are under a
         # research/non-commercial licence incompatible with this project's MIT

@@ -33,3 +33,5 @@ books*.log
 # licence), which is incompatible with this project's MIT licence. Kept
 # local-only and never published.
 src/ebooker/synth/higgs.py
+# OmniVoice: upstream declares no licence. Local-only.
+src/ebooker/synth/omnivoice.py

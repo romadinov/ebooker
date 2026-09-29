@@ -7,6 +7,11 @@ EPUB library, generated locally, at effectively zero marginal cost.
 
 ## 1. Verdict up front
 
+> **SUPERSEDED — see §6a, §6e and §6h.** Chatterbox was disqualified on measurement
+> (4.3% CER, ~340x slower, 0/3 on stress control), and the package in fact loads the
+> **V2** checkpoint, so every measurement below labelled V3 was V2. Russian now routes
+> to OmniVoice + ё (shipped) or Piper (exact stress); English to Kokoro.
+
 **Model: Chatterbox Multilingual V3** (Resemble AI, 0.5B, MIT licence) as the single
 TTS backend for both languages. It covers Russian *and* English among its 23
 languages, does zero-shot voice cloning from ~5 s of reference audio, and won
@@ -694,6 +699,202 @@ what matters:
 * **Resumability matters more than speed.** Chapter-level caching already exists
   (`--force` to re-render), so an interrupted overnight run resumes rather than
   restarting.
+
+## 6h. The Russian engine search — measured 2026-08-31 to 09-13
+
+Sections 6a-6g optimised ESpeech: stress marks, pacing, chunk size, the verifier.
+Listening then rejected the result on two axes that no amount of tuning moved --
+**"мне русский не понравился, ударения неправильные"**, later **"still bad, no
+intonation, plain"**. Those are two separate problems, and separating them is
+what finally made progress possible:
+
+* **Stress placement** -- a property of the text front-end *and* of whether the
+  model obeys it.
+* **Intonation** -- a property of the model's size and architecture.
+
+Nine engines were measured against both.
+
+### Results
+
+| engine | size | stress obeyed | CER (ru) | pace | cost / 4 books | licence |
+|---|---|---|---|---|---|---|
+| Piper (VITS) | 60 MB | **4 / 4, exact** | -- | 12.6-18.1 ch/s | **~35 min CPU** | MIT |
+| OmniVoice (k2-fsa) | -- | untested | **0.7-3.5%** | 21.3 → 16.1 @ speed 0.75 | ~15 h GPU | none declared |
+| VoxCPM2 (openbmb) | -- | untested | **0.0-7.4%** | 9.8-13.2 ch/s | ~15 h GPU | Apache-2.0 |
+| Higgs Audio v3 | 4B | 2 / 3 | 0.0-1.0% | 12.9-14.5 ch/s | ~89 h GPU | non-commercial |
+| Qwen3-TTS | 1.7B | acute *hurts* | 0.7-12.6% | 12.5-16.0 ch/s | ~30 h GPU | Apache-2.0 |
+| ESpeech (5 ckpts) | 0.3B | 1 / 3 | 5.5-18.9% | 16.3 ch/s | ~11 h GPU | Apache-2.0 |
+| Chatterbox V3 | 0.5B | **0 / 3** | -- | 14.8-16.4 ch/s | very slow | MIT |
+| StyleTTS2 | -- | n/a | **60%** | -- | -- | MIT |
+| IndexTTS-2, VibeVoice | -- | -- | -- | -- | -- | no Russian at all |
+
+### Stress notation does not travel between models
+
+There is no universal way to write Russian stress. Each model needs its own, and
+using the wrong one is catastrophic rather than merely suboptimal:
+
+* **`+` (the RUAccent/Silero convention)** is read *aloud* as "плюс" by Qwen
+  (85.4% CER), Higgs (81.6 s of output for a 10 s passage) and espeak. Only
+  ESpeech consumes it.
+* **U+0301 combining acute** -- ordinary Russian dictionary orthography -- is
+  accepted silently by Higgs and Piper at 0.0% CER, but *hurts* Qwen
+  (21.6% against 2.0% for the same text unmarked).
+* **Chatterbox** tokenises the acute as a distinct token at the correct
+  position, so the model can see it, and then ignores it acoustically.
+
+### Measuring whether a model obeys stress at all
+
+ASR cannot answer this: Whisper is blind to stress and normalises ё to е. But a
+stressed Russian syllable carries more energy, so the **energy centroid inside a
+minimal pair** is a physical proxy. Same spelling, mark on the first vowel vs the
+second, four seeds each; if the mark is obeyed the centroid shifts.
+
+| pair | ESpeech RL-V1 | Higgs 4B | Chatterbox V3 | Piper / espeak |
+|---|---|---|---|---|
+| му́ка / мука́ | moves | marginal | no | **moves** |
+| по́лки / полки́ | no | moves | no | **moves** |
+| за́мок / замо́к | no | no | no | **moves** |
+| до́рога / доро́га | -- | -- | -- | **moves** |
+
+`замок` failed identically in three engines. **Stress marks are a suggestion to
+every neural front-end tested except espeak's**, which is rule-based and
+therefore deterministic: `за́мок → zˈɑmʌk` (with the unstressed vowel correctly
+reducing to ʌ) vs `замо́к → zamˈok`.
+
+Piper also exposes the phoneme string and `phoneme_alignments`, so stress
+placement is **checkable per word before rendering** -- and that alignment is the
+forced alignment that three earlier attempts (§6d) failed to build.
+
+### ё restoration is the one fix that helps every engine
+
+Russian print routinely substitutes е for ё. Measured over this corpus:
+
+| book | ё | е | ratio |
+|---|---|---|---|
+| Гаррисон — Плененная Вселенная | **1** | 49,913 | 0.0 per 1000 |
+| Веллер — Б. Вавилонская | 10 | 24,239 | 0.4 per 1000 |
+| Олди — Повести о карме | 2,306 | 30,563 | 75.5 per 1000 |
+
+ё is *always* stressed, so every unrestored `пошел`/`всё`/`ещё` is a stress error
+**no model can avoid** -- the information is absent from the input. silero-stress
+restores it; RUAccent does too but less reliably. This is orthography, not
+notation, so every engine understands it.
+
+### ESpeech: the shipped books used the worst checkpoint
+
+Five checkpoints exist, not the two wired up. RuASD MOS: **RL-V1 4.85**,
+SFT-95K 4.83, RL-V2 4.80, **SFT-256K 4.76**. All five delivered books used
+SFT-256K, because the driver scripts hard-coded `--variant sft` and overrode the
+CLI's own `rlv2` default. `podcaster` (trained only on podcasts, for spontaneous
+delivery) was never tried. All five are now selectable.
+
+### Chatterbox: every earlier "V3" measurement was V2
+
+`chatterbox-tts` hardcodes `t3_mtl23ls_v2.safetensors` in `from_local`, so §6a
+and §6e measured V2 while calling it V3. Both checkpoints live in the same repo;
+the real V3 was run here for the first time and scored 0/3 on stress. It also
+expects an external `russian_text_stresser` package that is not on PyPI, so its
+own Russian stress path has never been active in any run.
+
+### Outcome
+
+**OmniVoice + ё restoration at `speed=0.75`** rendered Б. Вавилонская:
+6.31 h, 10 chapters, 140 wpm, RTF 0.76, levels in spec, packaged duration
+matching rendered audio exactly. Stress remains unverified on it.
+
+Piper is the only engine with proven stress control and is ~250x cheaper, but is
+a 60 MB VITS model whose delivery may land closer to the ESpeech that was already
+rejected. That trade -- **exact stress cheaply, or better delivery with stress
+you cannot control** -- is the open question, and it is a listening question.
+
+---
+
+## 6i. What measurement could and could not establish
+
+Three instruments were invented during this search. One worked. Recording which
+failed matters more than recording the winner.
+
+### CER is blind to prosody, by construction
+
+It is punctuation-insensitive, which is exactly why it never detected the
+flatness that listening rejected immediately. It remains useful for gross
+failures -- vocalised notation, dropped words, runaway generation -- and useless
+as a quality ranking.
+
+### The ASR-punctuation proxy: plausible, and contradicted by ear
+
+Whisper assigns `?` and `!` from intonation, never having seen the script, so on
+a passage built from questions the count recovered is a signal about delivery.
+On an 11-mark passage: Higgs clone+tags **13**, Qwen preset 6, Higgs untagged 4,
+ESpeech **0**.
+
+It ranked Higgs far above ESpeech. Listening ranked them the other way. The
+proxy measures *expressiveness*, which is not what was actually wanted, and it
+was retired as a ranking instrument.
+
+### The ё measurement: killed by its own control
+
+Restored-ё words were checked against the transcript: Higgs honoured 2 of 19
+(11%), ESpeech 0 of 19. Damning -- and worthless. **Whisper normalises ё to е
+even on real human audio** that plainly says `Полёт`. The instrument was
+measuring Whisper's spelling convention. The control cost one command and
+invalidated two hours of conclusions.
+
+### The energy centroid: the one that held
+
+Physical rather than lexical, so it sidesteps ASR entirely, and it produced the
+`замок` result that decided the engine choice. Limits stated honestly: n=4 seeds,
+3-4 pairs, isolated words, and ESpeech's variance on isolated words is large
+(±0.215).
+
+### Engineering lessons
+
+* **Never assume an undeclared sample rate.** VoxCPM2 declares none; assuming
+  24 kHz produced an implausible 6.9 ch/s. Transcribing under each candidate rate
+  showed 44.1 kHz (0.0% CER). OmniVoice declares *both* 16 and 24 kHz in its own
+  configs; because it is a voice clone, matching output F0 to the reference
+  speaker (94.5 Hz → 97.0 Hz at 24 kHz, 24% flat at 16 kHz) settled it.
+* **Low temperature increases repetition loops in AR decoders.** Chasing
+  determinism at 0.3 made 7.7% of Higgs chunks degenerate to the token cap --
+  81.6 s of babble for ~9 s of text, **55% of a chapter's audio**. 0.7/0.95 cut
+  it to 1.7%. The evidence was already there: the eight bake-off renders judged
+  good all used 0.7/0.95.
+* **Bound generation length.** `max_new_tokens` defaulted to 2048 against a 25 Hz
+  codec, i.e. 81.6 s regardless of input length. Capping at 2x the duration
+  implied by chunk length turns unbounded babble into a short truncation the
+  duration check already catches.
+* **Non-finite samples abort AAC silently.** 66 samples across 52 of 240 chapters
+  left two books looking packaged -- correct chapter markers, plausible size --
+  while holding 0.27 h and 1.47 h of a rendered 9.04 h and 11.73 h.
+  `master.sanitise()` guards it; `scripts/nonfinite.py` repairs existing renders.
+  **Always compare packaged duration against rendered audio total.**
+* **Cache at the unit the cost justifies.** Chapter-level caching suited RTF 0.13.
+  At RTF 3.5 a chapter is three hours, and one stop forfeited 2h20m. Chunk-level
+  caching, keyed on text *and* synthesis settings, makes an interruption cost one
+  chunk.
+* **Bigger chunks do not help AR models.** 420 chars was 1.92x slower than 160
+  with 3.5x the flags: cost tracks output tokens, not call count.
+* **flash-attn bought nothing** -- 118 minutes to compile on aarch64, and the
+  model rejects it (`ValueError`).
+
+### Process lessons
+
+* **Check what is holding the GPU before killing anything.** Twice the machine
+  was described as free and was not: once a 101 GB vLLM container, once a
+  training job started 74 seconds earlier plus a live service. Neither was mine.
+* **`pgrep`/`pkill -f` matches the invoking command line.** It produced a phantom
+  duplicate job, and once killed the ssh session issuing it. Match exactly
+  (`ps -eo cmd= | grep -qx`), or verify with `ps` before acting.
+* **`scp a b dest/` with multiple sources silently clobbers.** `synth/__init__.py`
+  overwrote the package's own `__init__.py`.
+* **`setsid nohup … &` survives the local wrapper being killed** -- confirmed
+  repeatedly; a killed background task notification does not mean the remote job
+  died.
+* **Test the resume path, do not assume it.** A `kill -9` test caught that
+  `soundfile` derives format from the extension, so every `.part` write raised
+  `TypeError` and the cache would have silently done nothing.
+
+---
 
 ## 7. Phased plan
 

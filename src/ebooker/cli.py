@@ -154,6 +154,14 @@ def cmd_convert(a: argparse.Namespace) -> int:
         kw = {"lang_code": LANG_CODES.get(lang, "a")}
         if a.voice:
             kw["voice"] = a.voice
+    elif backend == "omnivoice":
+        if not a.voice:
+            print("error: --backend omnivoice needs --voice <reference.wav>",
+                  file=sys.stderr)
+            return 2
+        kw = {"reference": a.voice, "device": a.device}
+        if a.speed:
+            kw["speed"] = a.speed
     elif backend == "higgs":
         if not a.voice:
             print("error: --backend higgs needs --voice <reference.wav>",
@@ -388,7 +396,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("epub")
     c.add_argument("--backend", default=None,
                    choices=("silero", "kokoro", "espeech", "chatterbox",
-                            "higgs"),
+                            "higgs", "omnivoice"),
                    help="default: chosen per language (ru->silero, en->kokoro)")
     c.add_argument("--stress", default="ruaccent",
                    choices=("ruaccent", "silero", "none"),

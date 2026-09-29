@@ -53,11 +53,16 @@ estimated; RTF is the real-time factor, so 0.5 means twice as fast as playback.
 |---|---|---|---|---|---|
 | **Silero v5** | ru, uk, be | 1.7% | **0.008** | — | native stress + homographs, fixed voices |
 | **Kokoro-82M** | en + 7 more | **0.0%** | 0.055 | — | Apache 2.0, no cloning |
-| **ESpeech-TTS-1** | ru | 0.7–1.6% | 0.78 | **0.25** | F5/DiT, voice cloning, honours stress marks |
+| **ESpeech-TTS-1** | ru | 0.7–1.6% | 0.78 | **0.25** | F5/DiT, voice cloning; five checkpoints, `--variant` |
 | Chatterbox | 23 langs | 3.3% (ru) | 2.7–3.9 | — | MIT, cloning; **ignores stress marks** |
 
 Override with `--backend`, pick a voice with `--voice`, and see
 `ebooker convert --help` for the rest.
+
+ESpeech ships five checkpoints and `--variant` selects among them. They are not
+equal: the RuASD evaluation scores RL-V1 at 4.85 MOS, SFT-95K 4.83, RL-V2 4.80
+and SFT-256K 4.76. `podcaster` is trained only on podcasts, for more spontaneous
+delivery.
 
 ## Russian stress
 
@@ -75,10 +80,36 @@ Two editable files carry corrections, because you will find more by ear:
   came out as "и ганг", while *Йоган* is said correctly. Stress marks cannot fix
   this; only respelling can.
 
-Not every model accepts stress marks. Silero and ESpeech take `+` before the
-stressed vowel. Chatterbox is destroyed by it (58.5% error rate — it reads the
-plus signs aloud) and tolerates the combining acute U+0301 while **not actually
-honouring it**, which is why it is not the Russian default.
+`--stress silero` uses [silero-stress](https://github.com/snakers4/silero-stress)
+instead, which additionally **restores ё**. That matters more than it sounds:
+Russian print routinely substitutes е, and one book in the test corpus contains a
+single ё against 49,913 е. Since ё is always stressed, every unrestored word is a
+stress error no model can avoid, because the information is not in the text.
+
+### Stress notation does not travel between models
+
+There is no universal encoding, and using the wrong one is catastrophic rather
+than merely suboptimal:
+
+| notation | Silero / ESpeech | Piper (espeak) | Higgs | Qwen3-TTS | Chatterbox |
+|---|---|---|---|---|---|
+| `+` before the vowel | **required** | read aloud | read aloud | read aloud (85% CER) | destroyed (58.5%) |
+| combining acute U+0301 | — | **obeyed** | accepted | **hurts** (21.6% vs 2.0%) | seen, then ignored |
+
+Worse, accepting the mark is not the same as obeying it. Measured on minimal
+pairs by where the energy peak lands inside the word, only espeak moved the
+stress every time — `за́мок → zˈɑmʌk` against `замо́к → zamˈok`, with the
+unstressed vowel correctly reducing:
+
+| pair | ESpeech | Higgs | Chatterbox | Piper / espeak |
+|---|---|---|---|---|
+| му́ка / мука́ | moves | marginal | no | **moves** |
+| по́лки / полки́ | no | moves | no | **moves** |
+| за́мок / замо́к | no | no | no | **moves** |
+
+espeak is rule-based, so its stress is deterministic and readable from the
+phoneme string *before* rendering. For every neural front-end tested, a stress
+mark is a suggestion.
 
 ## Mac and NVIDIA
 
