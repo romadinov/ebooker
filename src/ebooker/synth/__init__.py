@@ -4,7 +4,7 @@ from .base import Backend, Result
 
 __all__ = ["Backend", "Result", "get_backend", "default_backend", "BACKENDS"]
 
-BACKENDS = ("silero", "kokoro", "espeech", "chatterbox")
+BACKENDS = ("silero", "kokoro", "espeech", "chatterbox", "qwen-stress")
 
 # Chosen by measurement, not preference -- see DESIGN.md sections 6a and 6b.
 #
@@ -46,6 +46,9 @@ def get_backend(name: str, **kw) -> Backend:
     if name == "chatterbox":
         from .chatterbox import Chatterbox
         return Chatterbox(**kw)
+    if name == "qwen-stress":
+        from .qwen_stress import QwenStress
+        return QwenStress(**kw)
     if name == "omnivoice":
         # Absent from BACKENDS for the same reason as higgs: the model
         # repository declares no licence, so it is not published here.

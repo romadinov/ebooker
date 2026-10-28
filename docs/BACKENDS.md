@@ -43,6 +43,25 @@ VIRTUAL_ENV=esp uv pip install f5-tts ruaccent soundfile num2words lxml "setupto
 not link against FFmpeg 9. The backend shims audio I/O to soundfile, so no
 action is needed — but that is why the shim exists.
 
+## Qwen stress (Russian, voice cloning, `--backend qwen-stress`)
+
+The stress-tuned Qwen3-TTS fine-tune
+[`siriusfreak/qwen3-tts-12hz-1.7b-ru-stress-cf`](https://huggingface.co/siriusfreak/qwen3-tts-12hz-1.7b-ru-stress-cf)
+(Apache-2.0). It follows a combining acute after the stressed vowel, so the
+backend restores ё and adds sparse stress marks with silero. `qwen-tts` pins
+transformers 4.57.3, which the main environment does not use, so it needs its
+own venv:
+
+```bash
+uv venv qwen --python 3.12
+VIRTUAL_ENV=qwen uv pip install "qwen-tts==0.1.1" "transformers==4.57.3" accelerate \
+  silero-stress lxml num2words ruaccent soundfile soxr openai-whisper
+```
+
+`--voice` is a short reference clip; its exact transcript goes next to it as
+`<clip>.txt`. A transcript that does not match the audio makes the model babble.
+It runs at about 0.75× real time on a DGX Spark without flash-attn.
+
 ## Chatterbox
 
 ```bash

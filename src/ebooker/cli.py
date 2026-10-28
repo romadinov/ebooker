@@ -166,6 +166,13 @@ def cmd_convert(a: argparse.Namespace) -> int:
         kw = {"voice": a.voice, "stress": "none" if a.stress == "none" else "silero"}
         if a.speed:
             kw["speed"] = a.speed
+    elif backend == "qwen-stress":
+        if not a.voice:
+            print("error: --backend qwen-stress needs --voice <reference.wav> "
+                  "(its transcript in <reference>.txt)", file=sys.stderr)
+            return 2
+        kw = {"reference": a.voice, "device": a.device,
+              "stress": "none" if a.stress == "none" else "silero"}
     elif backend == "higgs":
         if not a.voice:
             print("error: --backend higgs needs --voice <reference.wav>",
@@ -400,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("epub")
     c.add_argument("--backend", default=None,
                    choices=("silero", "kokoro", "espeech", "chatterbox",
-                            "higgs", "omnivoice", "piper"),
+                            "higgs", "omnivoice", "piper", "qwen-stress"),
                    help="default: chosen per language (ru->silero, en->kokoro)")
     c.add_argument("--stress", default="ruaccent",
                    choices=("ruaccent", "silero", "none"),
