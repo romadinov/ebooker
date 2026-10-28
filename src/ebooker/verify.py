@@ -533,6 +533,13 @@ class Transcriber:
         if sample_rate != 16000:
             audio = _resample(audio, sample_rate, 16000)
         audio = audio.astype(np.float32)
+        # Whisper drops the first consonant when speech begins at sample 0,
+        # which Piper's output does: "Пиво было хорошее" came back as "Счастливо
+        # было" or "вам было", and "Пробки" as "Робки". With 300 ms of silence
+        # either side the same audio transcribes correctly, so without this pad
+        # the verifier flags, and retries, chunks that are fine.
+        pad = np.zeros(int(0.3 * 16000), np.float32)
+        audio = np.concatenate([pad, audio, pad])
         if self.backend == "mlx":
             r = impl.transcribe(
                 audio, path_or_hf_repo=self.model, language=lang,
