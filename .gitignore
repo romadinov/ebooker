@@ -35,3 +35,5 @@ books*.log
 src/ebooker/synth/higgs.py
 # OmniVoice: upstream declares no licence. Local-only.
 src/ebooker/synth/omnivoice.py
+# Piper: piper-tts is GPL-3.0, the ru_RU-ruslan voice CC BY-NC-SA. Local-only.
+src/ebooker/synth/piper.py

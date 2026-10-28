@@ -58,6 +58,17 @@ def get_backend(name: str, **kw) -> Backend:
                 f"Supply src/ebooker/synth/omnivoice.py yourself to use it ({e})."
             ) from e
         return OmniVoice(**kw)
+    if name == "piper":
+        # Local-only: piper-tts is GPL-3.0 and the ruslan voice CC BY-NC-SA.
+        try:
+            from .piper import Piper
+        except ImportError as e:
+            raise ValueError(
+                "the 'piper' backend is local-only and not part of this "
+                "repository: piper-tts is GPL-3.0 and the ru_RU-ruslan voice is "
+                f"non-commercial. Supply src/ebooker/synth/piper.py yourself ({e})."
+            ) from e
+        return Piper(**kw)
     if name == "higgs":
         # Deliberately absent from BACKENDS: the Higgs weights are under a
         # research/non-commercial licence incompatible with this project's MIT
