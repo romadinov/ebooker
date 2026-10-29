@@ -10,6 +10,12 @@ Text treatment, also chosen by ear: ё restored and sparse acute marks from
 silero (``to_acute_sparse``). Words the source already marks by hand keep their
 own acute, so a deliberate за́мок / замо́к is never overridden.
 
+Dashes: the model runs straight through a mid-sentence dash («А еще спокойнее –
+ослицу» came out with a 60 ms gap; 10–370 ms across ten sentences). Read as an
+ellipsis it pauses and phrases the sentence the way a narrator would; picked by
+ear over inserting a fixed 350 ms of silence and over a full stop. Dialogue
+dashes are left alone.
+
 Voice: cloned from a short reference clip plus its exact transcript. A
 transcript that disagrees with its audio is what made earlier models babble,
 so it is required, read from ``<reference>.txt`` when not passed.
@@ -21,6 +27,7 @@ to exactly this); the pipeline's own verification is the second line.
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -33,6 +40,10 @@ ACUTE = "́"
 MAX_SECONDS_PER_CHAR = 1 / 7.0   # measured reading rate is ~14 chars/second
 MIN_CEILING_S = 4.0
 ATTEMPTS = 3
+# A dash after a word, comma or closing quote, i.e. mid-sentence. Not a dialogue
+# dash at the start of a line, nor the one after «...?» that introduces the
+# author's words: neither was tested by ear, and «?...» changes the question.
+MID_DASH = re.compile(r"(?<=[\w,»)]) [–—] ")
 
 
 def _acute_to_plus(word: str) -> str:
@@ -89,7 +100,7 @@ class QwenStress:
 
     @property
     def cache_key(self) -> str:
-        return f"qwen-stress:{Path(self.reference).stem}:stress={self.stress}:v1"
+        return f"qwen-stress:{Path(self.reference).stem}:stress={self.stress}:v2"
 
     def mark(self, text: str) -> str:
         if self._acc is None:
@@ -103,7 +114,7 @@ class QwenStress:
         return to_acute_sparse(" ".join(marked))
 
     def synth(self, text: str, *, lang: str = "ru", seed: int | None = None) -> Result:
-        prompt = self.mark(text) if lang == "ru" else text
+        prompt = self.mark(MID_DASH.sub("... ", text)) if lang == "ru" else text
         ceiling = max(MIN_CEILING_S, len(text) * MAX_SECONDS_PER_CHAR)
         base = 0 if seed is None else seed
         t0 = time.perf_counter()

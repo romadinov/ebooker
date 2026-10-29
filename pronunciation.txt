@@ -7,3 +7,4 @@
 # grapheme sequence, so no amount of stress marking fixes them -- only respelling.
 
 Иоган = Йоган          # "Иоган" is read as "и ганг"; "Йоган" is said correctly
+пернуть = пёрнуть      # silero leaves the ё out; read as «пе́рнуть»
