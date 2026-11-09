@@ -57,6 +57,21 @@ def _acute_to_plus(word: str) -> str:
     return "".join(out)
 
 
+def mark_acute(acc, text: str) -> str:
+    """ё restored and sparse acute marks from silero (``acc``); words the source
+    already marks by hand keep their own acute. Shared with the pocket backend,
+    which takes the same notation."""
+    if acc is None:
+        return text
+    from ..ru_stress import to_acute_sparse
+    words = text.split(" ")
+    bare = " ".join(w.replace(ACUTE, "") for w in words)
+    marked = acc.mark(bare).split(" ")
+    if len(marked) == len(words):
+        marked = [_acute_to_plus(w) if ACUTE in w else m for w, m in zip(words, marked)]
+    return to_acute_sparse(" ".join(marked))
+
+
 class QwenStress:
     name = "qwen-stress"
     sample_rate = 24000
@@ -103,15 +118,7 @@ class QwenStress:
         return f"qwen-stress:{Path(self.reference).stem}:stress={self.stress}:v2"
 
     def mark(self, text: str) -> str:
-        if self._acc is None:
-            return text
-        from ..ru_stress import to_acute_sparse
-        words = text.split(" ")
-        bare = " ".join(w.replace(ACUTE, "") for w in words)
-        marked = self._acc.mark(bare).split(" ")
-        if len(marked) == len(words):
-            marked = [_acute_to_plus(w) if ACUTE in w else m for w, m in zip(words, marked)]
-        return to_acute_sparse(" ".join(marked))
+        return mark_acute(self._acc, text)
 
     def synth(self, text: str, *, lang: str = "ru", seed: int | None = None) -> Result:
         prompt = self.mark(MID_DASH.sub("... ", text)) if lang == "ru" else text

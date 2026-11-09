@@ -62,6 +62,25 @@ VIRTUAL_ENV=qwen uv pip install "qwen-tts==0.1.1" "transformers==4.57.3" acceler
 `<clip>.txt`. A transcript that does not match the audio makes the model babble.
 It runs at about 0.75× real time on a DGX Spark without flash-attn.
 
+## Shtorm-PocketTTS-RU (Russian, voice cloning, `--backend pocket`)
+
+[`ArtShtorm/Shtorm-PocketTTS-RU`](https://huggingface.co/ArtShtorm/Shtorm-PocketTTS-RU)
+(CC-BY-4.0) is a Russian book-reading fine-tune of Kyutai's
+[pocket-tts](https://github.com/kyutai-labs/pocket-tts) (MIT). It follows
+combining-acute stress marks, so the backend gives it the qwen-stress text
+treatment (ё, sparse silero marks, mid-sentence dashes as «...»). `pocket-tts`
+only needs `torch>=2.5`, so it lives in the main environment:
+
+```bash
+uv pip install "pocket-tts[audio]"
+```
+
+`--voice` is a reference clip, ideally about 5 s ending on a complete phrase; no
+transcript is needed. `--variant slow` (default) is the author's calmer delivery,
+`fast` the other checkpoint. The model is 100M parameters and renders about five
+times faster than real time on CPU; on a DGX Spark it runs on the GPU with the
+Mimi codec on CPU, as the library arranges.
+
 ## Chatterbox
 
 ```bash

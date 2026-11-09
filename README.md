@@ -55,14 +55,41 @@ estimated; RTF is the real-time factor, so 0.5 means twice as fast as playback.
 | **Kokoro-82M** | en + 7 more | **0.0%** | 0.055 | — | Apache 2.0, no cloning |
 | **ESpeech-TTS-1** | ru | 0.7–1.6% | 0.78 | **0.25** | F5/DiT, voice cloning; five checkpoints, `--variant` |
 | Chatterbox | 23 langs | 3.3% (ru) | 2.7–3.9 | — | MIT, cloning; **ignores stress marks** |
+| **Shtorm-PocketTTS-RU** | ru | 1 of 40 chunks flagged | — | 0.19 (CPU) | CC-BY-4.0, cloning, 100M; **obeys acute stress marks**; picked by ear for Russian narration |
 
 Override with `--backend`, pick a voice with `--voice`, and see
-`ebooker convert --help` for the rest.
+`ebooker convert --help` for the rest. For a cloned Russian narrator the pick is
+`--backend pocket --voice narrator.wav` (`--variant slow`, the default, or `fast`):
+a 100M-parameter fine-tune of Kyutai's Pocket TTS that reads at the narrator's
+pace, follows the stress marks and renders a book in well under an hour.
 
 ESpeech ships five checkpoints and `--variant` selects among them. They are not
 equal: the RuASD evaluation scores RL-V1 at 4.85 MOS, SFT-95K 4.83, RL-V2 4.80
 and SFT-256K 4.76. `podcaster` is trained only on podcasts, for more spontaneous
 delivery.
+
+## A narrator's read-through with Claude
+
+The marking tools are right most of the time and wrong in ways you can hear:
+silero picks homographs from a narrow context and misses one in ten of them
+(«цвета́» for «цве́та»), its ё dictionary has gaps («раздернул»), and a comma that
+joins two clauses gets no pause at all from the voice model. `--editor claude`
+hands each chapter, already marked, to `claude -p` in batches of twenty chunks
+and asks for what a narrator would fix before reading: stress by grammar and
+context, ё, and punctuation for the pauses and intonation the model can
+actually render (measured: a comma ≈ 0, an ellipsis ≈ 0.45 s, a semicolon
+≈ 0.55 s, a full stop ≈ 0.7 s). Words may not change: a chunk whose letters
+differ from the source is discarded. Decisions are cached under
+`work/<book>/edits/` with a plain-text review file beside them, and
+verification still compares the recording with the clean source text.
+
+```bash
+uv run ebooker edit book.epub                      # review work/<book>/edits/ch001.txt …
+uv run ebooker convert book.epub --backend pocket --voice narrator.wav --editor claude
+```
+
+The two steps split so the read-through can run where `claude` is installed
+and the render on a GPU box that only receives the cached edits.
 
 ## Russian stress
 

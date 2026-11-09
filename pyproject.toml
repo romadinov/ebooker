@@ -22,10 +22,14 @@ dependencies = [
     "lxml>=6.1.2",
     "num2words>=0.5.14",
     "ruaccent>=1.5.8.3",
+    # ё restoration and acute stress marks for the qwen-stress and pocket backends.
+    "silero-stress>=1.4",
     "soundfile>=0.14.0",
     "torch>=2.13.0",
     "torchaudio>=2.11.0",
     "kokoro>=0.9.4",
+    # Shtorm-PocketTTS-RU, the Russian narration pick: 100M params, obeys stress marks.
+    "pocket-tts[audio]>=4.0.1",
     # Apple Silicon only: the fastest Whisper on that platform. On other
     # systems verification goes through openai-whisper (CUDA) or
     # faster-whisper (CPU) -- see the "cuda" and "cpu-asr" extras.

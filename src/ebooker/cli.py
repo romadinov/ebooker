@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import ingest, master, normalise, package
+from . import ingest, llm_edit, master, normalise, package
 from . import verify as verify_mod
 
 
@@ -91,6 +91,38 @@ def cmd_inspect(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_edit(a: argparse.Namespace) -> int:
+    """Run Claude's read-through on its own, so the edits can be reviewed (or
+    produced on a machine that has `claude`) before a render elsewhere."""
+    book = ingest.load(a.epub)
+    lang = a.lang or book.language
+    if (lang or "").split("-")[0] != "ru":
+        print("error: the editor is for Russian text", file=sys.stderr)
+        return 2
+    chapters = book.chapters
+    if a.chapters:
+        wanted = set(parse_chapter_spec(a.chapters, len(chapters)))
+        chapters = [c for c in chapters if c.index in wanted]
+    edits_dir = Path(a.work) / slugify(book.title) / "edits"
+    marker = llm_edit.default_marker()
+    print(f"{book.title} — {book.author}: {len(chapters)} chapter(s), "
+          f"model {a.editor_model}, {a.editor_jobs} jobs -> {edits_dir}")
+    total = 0
+    for ch in chapters:
+        chunks, _ = normalise.chunk_paragraphs(
+            ch.paragraphs, lang, ch.index, max_chars=a.max_chars)
+        t0 = time.perf_counter()
+        edits = llm_edit.edit_chapter(
+            chunks, marker, edits_dir, ch.index, title=book.title, author=book.author,
+            model=a.editor_model, jobs=a.editor_jobs, force=a.force)
+        total += len(edits)
+        print(f"  ch{ch.index:3} {len(chunks):4} chunks  {len(edits):4} edited  "
+              f"{time.perf_counter()-t0:5.0f}s  review: {edits_dir}/ch{ch.index:03d}.txt",
+              flush=True)
+    print(f"{total} chunks edited")
+    return 0
+
+
 def cmd_convert(a: argparse.Namespace) -> int:
     from .synth import default_backend, get_backend
 
@@ -101,17 +133,22 @@ def cmd_convert(a: argparse.Namespace) -> int:
         return 2
 
     backend = a.backend or default_backend(lang)
+    if backend == "pocket" and a.variant not in ("slow", "fast"):
+        a.variant = "slow"   # --variant's default names an ESpeech checkpoint
     slug = slugify(book.title)
     # The cache key has to include the voice. Chapter wavs were previously kept
     # in one directory per book, so switching voice or backend silently reused
     # chapters rendered by the previous one -- a book with chapters 1-2 in an
     # American voice and 3-19 in a British one, with nothing to warn you.
     render_id = "-".join(str(x) for x in
-                         (backend, a.voice or "default", a.variant if backend == "espeech" else "",
+                         (backend, a.voice or "default",
+                          a.variant if backend in ("espeech", "pocket") else "",
                           # Stress marker changes the audio, so it must change
                           # the key: silero restores ё where RUAccent does not.
                           a.stress if (lang == "ru" and a.stress != "ruaccent") else "",
-                          f"s{a.speed}" if a.speed else "", f"c{a.max_chars}")
+                          f"s{a.speed}" if a.speed else "", f"c{a.max_chars}",
+                          # Claude's edits change the text the model reads.
+                          "claude" if a.editor == "claude" else "")
                          if x)
     work = Path(a.work) / slug / slugify(render_id, limit=80)
     work.mkdir(parents=True, exist_ok=True)
@@ -173,6 +210,13 @@ def cmd_convert(a: argparse.Namespace) -> int:
             return 2
         kw = {"reference": a.voice, "device": a.device,
               "stress": "none" if a.stress == "none" else "silero"}
+    elif backend == "pocket":
+        if not a.voice:
+            print("error: --backend pocket needs --voice <reference.wav>",
+                  file=sys.stderr)
+            return 2
+        kw = {"reference": a.voice, "device": a.device, "variant": a.variant,
+              "stress": "none" if a.stress == "none" else "silero"}
     elif backend == "higgs":
         if not a.voice:
             print("error: --backend higgs needs --voice <reference.wav>",
@@ -192,6 +236,11 @@ def cmd_convert(a: argparse.Namespace) -> int:
         kw = {"reference": a.voice}
     if not a.package_only:
         tts = get_backend(backend, **kw)
+        if a.editor == "claude" and not hasattr(tts, "mark"):
+            print(f"error: --editor claude needs a backend that reads acute stress "
+                  f"marks (pocket, qwen-stress), not {backend}", file=sys.stderr)
+            return 2
+    edits_dir = Path(a.work) / slug / "edits"
 
     if not (a.no_verify or a.package_only):
         transcriber = verify_mod.Transcriber()
@@ -228,6 +277,11 @@ def cmd_convert(a: argparse.Namespace) -> int:
             continue
 
         t0 = time.perf_counter()
+        edits: dict[int, llm_edit.Edit] = {}
+        if a.editor == "claude":
+            edits = llm_edit.edit_chapter(
+                chunks, tts.mark, edits_dir, ch.index, title=book.title,
+                author=book.author, model=a.editor_model, jobs=a.editor_jobs)
         pieces: list[tuple[np.ndarray, int]] = []
         chapter_flags: list[str] = []
         bad = 0
@@ -249,20 +303,24 @@ def cmd_convert(a: argparse.Namespace) -> int:
         # would have kept 7.7% runaway chunks after fixing the cause.
         synth_key = str(getattr(tts, "cache_key", getattr(tts, "name", "")))
         for c in chunks:
+            e = edits.get(c.index)
+            # What the model reads; verification still compares with c.text.
+            stext = e.text if e else c.text
+            pause_ms = llm_edit.scale_pause(c.pause_ms, e.pause if e else None)
             digest = hashlib.sha1(
-                (synth_key + "\x00" + c.text).encode("utf-8")).hexdigest()[:12]
+                (synth_key + "\x00" + stext).encode("utf-8")).hexdigest()[:12]
             cpath = chunk_dir / f"c{c.index:04d}-{digest}.wav"
             if cpath.exists():
                 try:
                     cached, csr = sf.read(cpath, dtype="float32", always_2d=False)
                     if cached.size and np.isfinite(cached).all():
-                        pieces.append((cached, c.pause_ms))
+                        pieces.append((cached, pause_ms))
                         reused += 1
                         continue
                 except Exception:
                     cpath.unlink(missing_ok=True)   # truncated by a hard kill
 
-            r = tts.synth(c.text, lang=lang, seed=a.seed)
+            r = tts.synth(stext, lang=lang, seed=a.seed)
             r.audio, n_bad = master.sanitise(r.audio)
             nonfinite += n_bad
             if transcriber is not None:
@@ -274,7 +332,7 @@ def cmd_convert(a: argparse.Namespace) -> int:
                         break
                     if attempt < a.retries:
                         retried += 1
-                        r = tts.synth(c.text, lang=lang,
+                        r = tts.synth(stext, lang=lang,
                                       seed=(a.seed or 0) + 1000 * (attempt + 1))
                 else:
                     bad += 1
@@ -301,7 +359,7 @@ def cmd_convert(a: argparse.Namespace) -> int:
             tmp = cpath.with_suffix(".part")
             sf.write(tmp, r.audio, r.sample_rate, subtype="FLOAT", format="WAV")
             tmp.replace(cpath)
-            pieces.append((r.audio, c.pause_ms))
+            pieces.append((r.audio, pause_ms))
 
         if reused:
             print(f"    ch{ch.index} reused {reused}/{len(chunks)} cached chunks",
@@ -403,29 +461,50 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("-v", "--verbose", action="store_true")
     i.set_defaults(fn=cmd_inspect)
 
+    e = sub.add_parser("edit", help="Claude's read-through of a Russian book: "
+                                     "stress, ё and pauses, cached for convert --editor claude")
+    e.add_argument("epub")
+    e.add_argument("--chapters", default=None, help='"1", "1-3", "1,4,7-9"')
+    e.add_argument("--lang", default=None)
+    e.add_argument("--work", default="work")
+    e.add_argument("--max-chars", type=int, default=normalise.MAX_CHUNK_CHARS)
+    e.add_argument("--editor-model", default=llm_edit.DEFAULT_MODEL)
+    e.add_argument("--editor-jobs", type=int, default=llm_edit.JOBS)
+    e.add_argument("--force", action="store_true", help="ignore cached edits")
+    e.set_defaults(fn=cmd_edit)
+
     c = sub.add_parser("convert", help="convert an EPUB to an M4B")
     c.add_argument("epub")
     c.add_argument("--backend", default=None,
                    choices=("silero", "kokoro", "espeech", "chatterbox",
-                            "higgs", "omnivoice", "piper", "qwen-stress"),
+                            "higgs", "omnivoice", "piper", "qwen-stress", "pocket"),
                    help="default: chosen per language (ru->silero, en->kokoro)")
     c.add_argument("--stress", default="ruaccent",
                    choices=("ruaccent", "silero", "none"),
                    help="Russian stress marker; silero also restores ё")
-    c.add_argument("--variant", default="rlv2", choices=("rlv1", "rlv2", "sft95k", "podcaster", "sft"),
-                   help="espeech only: which checkpoint")
+    c.add_argument("--variant", default="rlv2",
+                   choices=("rlv1", "rlv2", "sft95k", "podcaster", "sft", "slow", "fast"),
+                   help="espeech: which checkpoint; pocket: slow (default) or fast delivery")
     c.add_argument("--device", default="auto",
                    help="cuda | mps | cpu | auto (default: detect)")
     c.add_argument("--speed", type=float, default=None,
                    help="espeech only: 1.0 is ~21 chars/s, 0.82 is ~18")
     c.add_argument("--voice", default=None,
-                   help="silero speaker / kokoro voice, or reference wav for chatterbox")
+                   help="silero speaker / kokoro voice, or reference wav for "
+                        "chatterbox, espeech, qwen-stress and pocket")
     c.add_argument("--lang", default=None, help="override the EPUB's dc:language")
     c.add_argument("--out", default=None)
     c.add_argument("--work", default="work")
     c.add_argument("--limit", type=int, default=0, help="first N chapters only")
     c.add_argument("--chapters", default=None,
                    help="render only these chapters: \"21\", \"21-25\", \"1,3,7-9\"")
+    c.add_argument("--editor", default="none", choices=("none", "claude"),
+                   help="have Claude read the chapter first and fix stress, ё and "
+                        "pauses (pocket / qwen-stress only; cached under work/<book>/edits)")
+    c.add_argument("--editor-model", default=llm_edit.DEFAULT_MODEL,
+                   help=f"model for --editor claude (default {llm_edit.DEFAULT_MODEL})")
+    c.add_argument("--editor-jobs", type=int, default=llm_edit.JOBS,
+                   help="parallel claude -p calls")
     c.add_argument("--render-only", action="store_true",
                    help="synthesise into the cache and stop, without packaging")
     c.add_argument("--package-only", action="store_true",
