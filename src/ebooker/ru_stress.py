@@ -103,6 +103,18 @@ PHRASE_OVERRIDES: list[tuple[str, str]] = [
      "отс+ек"),
     (r"\b(\w*ый|\w*ой|\w*ий|этот|тот|весь|каждый|данный)(\s+)отс\+ёк\b",
      r"\1\2отс+ек"),
+
+    # цве́та (genitive singular: "of the colour") versus цвета́ (plural: colours).
+    # silero decides by context and gets «предупреждающего цвета "мокрый асфальт"»
+    # and «цвета крови» wrong while getting «красного цвета» right. The noun is
+    # genitive singular after an adjective in the genitive, before a quoted
+    # colour name, and before the usual colour-of nouns.
+    (r"\b(\w+(?:ого|его))(\s+)цвет\+а\b", r"\1\2цв+ета"),
+    (r"\bцвет\+а\b(?=\s*[«\"])", "цв+ета"),
+    (r"\bцвет\+а\b(?=\s+\+?(?:кр\+?ови|х\+?аки|сл\+?оновой|морск\+?ой|б\+?еж|"
+     r"инд\+?иго|эл\+?ектрик|борд\+?о|мет\+?аллик|заг\+?ара|н\+?еба|з\+?олота|"
+     r"сер\+?ебра|р\+?жавчины|п\+?епла|сл\+?ивок|шокол\+?ада|к\+?офе|мор\+?я)\b)",
+     "цв+ета"),
 ]
 
 _SENT_START = re.compile(r"(?:^|(?<=[.!?…])\s+|(?<=\n))\s*([А-ЯЁ][а-яё]+)")

@@ -8,3 +8,8 @@
 
 Иоган = Йоган          # "Иоган" is read as "и ганг"; "Йоган" is said correctly
 пернуть = пёрнуть      # silero leaves the ё out; read as «пе́рнуть»
+
+# Not a respelling but a pause: Pocket runs through the comma between two
+# independent clauses here with no audible gap (measured under 80 ms, against
+# 560 ms for a semicolon). Heard by the user in Б. Вавилонская, 2026-11-09.
+погубит народ, надо = погубит народ; надо

@@ -7,3 +7,12 @@
 # PHRASE_OVERRIDES in src/ebooker/ru_stress.py instead.
 
 после = п+осле        # RUAccent's dictionary has посл+е, which is wrong
+
+# ё that silero's restorer misses. It knows дёрнул, одёрнула, задёрнул and
+# передёрнуло but not раздёрнул, so «другой раздернул молнию» was read разде́рнул
+# (Б. Вавилонская, heard by the user 2026-11-09).
+раздернул = разд+ёрнул
+раздернула = разд+ёрнула
+раздернули = разд+ёрнули
+раздернуло = разд+ёрнуло
+раздернуть = разд+ёрнуть
