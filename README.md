@@ -12,6 +12,9 @@ uv run ebooker inspect  book.epub      # what's in it, how long it will be
 uv run ebooker convert  book.epub      # -> out/<Title>.m4b
 ```
 
+Hear it first: [Russian and English samples](https://romadinov.github.io/ebooker/)
+rendered by the pipeline from public-domain texts, with the architecture diagram.
+
 ## Why the verification matters
 
 Neural TTS fails quietly. It drops a numeral, merges two words, reads a
@@ -90,6 +93,37 @@ uv run ebooker convert book.epub --backend pocket --voice narrator.wav --editor 
 
 The two steps split so the read-through can run where `claude` is installed
 and the render on a GPU box that only receives the cached edits.
+
+## Latin script in a Russian book
+
+Russian prose quotes brand names in Latin («Coca-Cola»), drops English words in
+for effect and occasionally switches to English for a paragraph. The Russian
+models read none of it: Shtorm-PocketTTS-RU skips Latin words outright, which is
+what put 99 flagged chunks in one chapter of a Veller satire that drifts from
+«Marlboro» through pidgin into pages of broken English. By default (`--latin
+route`) each sentence is treated by how much of it is Latin:
+
+- **A sentence that is (almost) all Latin is English** and goes to an English
+  voice. With `--backend pocket` that is Kyutai's own English Pocket TTS cloning
+  the same clip, so the narrator keeps his voice; the cloning backends
+  (qwen-stress, higgs, omnivoice) read the English themselves. Kyutai's cloning
+  weights are gated: accept the terms at
+  [huggingface.co/kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts)
+  and run `hf auth login`, or name one of its preset voices with
+  `--en-voice george`. English chunks are verified as English.
+- **Latin words inside a Russian sentence are transliterated** the way a Russian
+  narrator says them, through the CMU pronouncing dictionary and Russian
+  practical transcription: *Marlboro* → «Ма́рлборо», *tough guys* → «таф гайз»,
+  *consensus'a* → «консе́нсуса». The dictionary's stress becomes an acute the
+  stress marker keeps; reduced vowels follow the spelling («резиденс», not
+  «резиданс»). Pidgin sentences stay with the Russian narrator, accent and all,
+  as the author meant them. Roman numerals become ordinals in the right case
+  («в XX веке» → «в двадцатом веке»), short all-caps tokens are spelt out
+  («VIP» → «ви-ай-пи»), and `pronunciation.txt` overrides any of it.
+
+`--latin translit` transliterates everything, English sentences included, for a
+single Russian voice; `--latin keep` leaves the text alone. A chunk never mixes
+languages, and `ebooker inspect` lists what was routed and transliterated.
 
 ## Russian stress
 

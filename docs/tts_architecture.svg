@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="ebooker pipeline: book text is normalised, stress-marked and read through by an LLM before a small speech model speaks it; every chunk is transcribed back and compared, failures are re-rolled with a new seed, and what still fails goes to a review list instead of into the audiobook" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1F2A33"/>
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0E7C86"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="900" fill="#FFFFFF"/>
+
+  <text x="40" y="70" font-size="34" font-weight="700" fill="#1F2A33">From EPUB to a verified audiobook</text>
+  <text x="40" y="106" font-size="19" fill="#5B6770">Text does the thinking, a small model does the speaking, and nothing reaches the book unchecked.</text>
+
+  <!-- row 1: text pipeline -->
+  <g stroke="#1F2A33" stroke-width="2">
+    <rect x="40" y="180" width="170" height="150" rx="6" fill="#F3F5F7"/>
+    <rect x="270" y="180" width="270" height="150" rx="6" fill="#F3F5F7"/>
+    <rect x="600" y="180" width="250" height="150" rx="6" fill="#F3F5F7"/>
+    <rect x="910" y="180" width="270" height="150" rx="6" fill="#F3F5F7"/>
+    <rect x="1240" y="180" width="300" height="150" rx="6" fill="#F3F5F7"/>
+  </g>
+  <g fill="#1F2A33" font-size="20" font-weight="700">
+    <text x="125" y="222" text-anchor="middle">Book</text>
+    <text x="405" y="222" text-anchor="middle">Normalise</text>
+    <text x="725" y="222" text-anchor="middle">Mark stress</text>
+    <text x="1045" y="222" text-anchor="middle">LLM read-through</text>
+    <text x="1390" y="222" text-anchor="middle">Speech model</text>
+  </g>
+  <g fill="#3B4650" font-size="15">
+    <text x="125" y="252" text-anchor="middle">EPUB / FB2</text>
+    <text x="125" y="276" text-anchor="middle">chapters, cover</text>
+    <text x="405" y="252" text-anchor="middle">numbers, abbreviations spelled out</text>
+    <text x="405" y="276" text-anchor="middle">Latin script: route or transliterate</text>
+    <text x="405" y="300" text-anchor="middle">sentences packed into 160-char chunks</text>
+    <text x="725" y="252" text-anchor="middle">ё restored, acute on ambiguous</text>
+    <text x="725" y="276" text-anchor="middle">words (silero dictionary)</text>
+    <text x="725" y="300" text-anchor="middle">+ overrides you hear and add</text>
+    <text x="1045" y="252" text-anchor="middle">Claude, 20 chunks at a time:</text>
+    <text x="1045" y="276" text-anchor="middle">stress by context, ё, pauses</text>
+    <text x="1045" y="300" text-anchor="middle">letters may not change (guard)</text>
+    <text x="1390" y="252" text-anchor="middle">Pocket TTS, 100M params, cloned</text>
+    <text x="1390" y="276" text-anchor="middle">from an 8 s clip; 5× realtime on CPU</text>
+    <text x="1390" y="300" text-anchor="middle">RU: Pocket 100M · EN: Kokoro-82M</text>
+  </g>
+  <!-- arrows row 1 -->
+  <g stroke="#1F2A33" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <line x1="210" y1="255" x2="268" y2="255"/>
+    <line x1="540" y1="255" x2="598" y2="255"/>
+    <line x1="850" y1="255" x2="908" y2="255"/>
+    <line x1="1180" y1="255" x2="1238" y2="255"/>
+  </g>
+  <g fill="#5B6770" font-size="13" text-anchor="middle">
+    <text x="239" y="243">text</text>
+    <text x="569" y="243">chunks</text>
+    <text x="879" y="243">marked</text>
+    <text x="1209" y="243">edited</text>
+  </g>
+
+  <!-- row 2: cache + verify -->
+  <g stroke="#1F2A33" stroke-width="2">
+    <rect x="910" y="480" width="270" height="110" rx="6" fill="#FFFFFF" stroke-dasharray="7 5"/>
+  </g>
+  <rect x="1240" y="470" width="300" height="170" rx="6" fill="#E6F3F4" stroke="#0E7C86" stroke-width="3"/>
+  <g fill="#1F2A33" font-size="20" font-weight="700">
+    <text x="1045" y="520" text-anchor="middle">Chunk cache</text>
+    <text x="1390" y="512" text-anchor="middle" fill="#0E7C86">Verify every chunk</text>
+  </g>
+  <g fill="#3B4650" font-size="15">
+    <text x="1045" y="548" text-anchor="middle">keyed on text + settings</text>
+    <text x="1045" y="572" text-anchor="middle">a kill costs one chunk, not a chapter</text>
+    <text x="1390" y="542" text-anchor="middle">Whisper transcribes the audio back;</text>
+    <text x="1390" y="566" text-anchor="middle">compared with the source: numerals,</text>
+    <text x="1390" y="590" text-anchor="middle">content words, word count,</text>
+    <text x="1390" y="614" text-anchor="middle">duration, silence, clipping</text>
+  </g>
+  <!-- synth -> verify -->
+  <line x1="1390" y1="330" x2="1390" y2="468" stroke="#1F2A33" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="1402" y="405" font-size="13" fill="#5B6770">audio</text>
+  <!-- cache <-> synth -->
+  <line x1="1120" y1="480" x2="1310" y2="332" stroke="#1F2A33" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <text x="1150" y="395" font-size="13" fill="#5B6770">store / reuse</text>
+  <!-- verify -> synth loop (accent) -->
+  <path d="M1540,555 C1600,555 1600,255 1542,255" fill="none" stroke="#0E7C86" stroke-width="3" marker-end="url(#arrow-accent)"/>
+  <text x="1575" y="398" font-size="14" fill="#0E7C86" text-anchor="middle" transform="rotate(-90 1575 398)">fails → new seed, up to 3 tries</text>
+
+  <!-- row 3: master, m4b, review -->
+  <g stroke="#1F2A33" stroke-width="2">
+    <rect x="600" y="690" width="250" height="130" rx="6" fill="#F3F5F7"/>
+    <rect x="270" y="690" width="270" height="130" rx="6" fill="#F3F5F7"/>
+    <rect x="1240" y="720" width="300" height="100" rx="6" fill="#FFF4E5" stroke="#9A5B00"/>
+  </g>
+  <g fill="#1F2A33" font-size="20" font-weight="700">
+    <text x="725" y="732" text-anchor="middle">Master and package</text>
+    <text x="405" y="732" text-anchor="middle">M4B audiobook</text>
+    <text x="1390" y="757" text-anchor="middle" fill="#9A5B00">Review list</text>
+  </g>
+  <g fill="#3B4650" font-size="15">
+    <text x="725" y="762" text-anchor="middle">level, limiter, chapter marks,</text>
+    <text x="725" y="786" text-anchor="middle">cover, metadata</text>
+    <text x="405" y="762" text-anchor="middle">plays in Apple Books, any player;</text>
+    <text x="405" y="786" text-anchor="middle">10 h of audio in about 90 min</text>
+    <text x="1390" y="785" text-anchor="middle">still failing after 3 tries: a human ear,</text>
+    <text x="1390" y="805" text-anchor="middle">never silently into the book</text>
+  </g>
+  <!-- verify -> master (passes) -->
+  <path d="M1240,620 L1040,620 L1040,755 L852,755" fill="none" stroke="#0E7C86" stroke-width="3" marker-end="url(#arrow-accent)"/>
+  <text x="1140" y="610" font-size="14" fill="#0E7C86" text-anchor="middle">passes</text>
+  <!-- verify -> review -->
+  <line x1="1390" y1="640" x2="1390" y2="718" stroke="#9A5B00" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- master -> m4b -->
+  <line x1="600" y1="755" x2="542" y2="755" stroke="#1F2A33" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <text x="40" y="870" font-size="14" fill="#5B6770">ebooker, MIT · github.com/romadinov/ebooker · runs on an Apple Silicon Mac or an NVIDIA box with the same command</text>
+</svg>

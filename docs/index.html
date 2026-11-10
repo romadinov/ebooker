@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ebooker — samples</title>
+<meta name="description" content="Russian and English audiobook samples from ebooker, the local EPUB-to-M4B pipeline that verifies every chunk it synthesises.">
+<style>
+  :root {
+    --bg: #F6F7F8; --fg: #1F2A33; --muted: #5B6770; --panel: #FFFFFF; --line: #D5DBE0; --accent: #0E7C86;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15191D; --fg: #E6EAED; --muted: #9AA6AF; --panel: #1E242A; --line: #353D45; --accent: #4FB3BB; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif;
+         padding: 36px max(16px, env(safe-area-inset-left, 0px)) 64px max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 960px; margin: 0 auto; display: grid; gap: 36px; }
+  h1 { font-size: 36px; line-height: 1.1; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 22px; margin: 0 0 6px; }
+  p { margin: 0; }
+  .lede { color: var(--muted); max-width: 62ch; }
+  a { color: var(--accent); }
+  .cmd { display: inline-block; margin-top: 14px; font: 15px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+         background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; overflow-x: auto; max-width: 100%; }
+  .samples { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .sample { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px 22px; min-width: 0; display: grid; gap: 12px; align-content: start; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  audio { width: 100%; }
+  .meta { color: var(--muted); font-size: 14px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .text { font-size: 15px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; }
+  .model { font-size: 15px; }
+  .model b { color: var(--fg); }
+  figure { margin: 0; background: #FFFFFF; border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow-x: auto; }
+  figure img { display: block; width: 100%; min-width: 640px; height: auto; }
+  figcaption { color: var(--muted); font-size: 15px; margin-top: 10px; padding: 0 4px; max-width: 70ch; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 15px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  footer { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>ebooker</h1>
+    <p class="lede">Turn a shelf of EPUBs into M4B audiobooks on your own machine. Every chunk of speech is transcribed back and compared with the text, because speech models drop and mangle words silently. These two samples were rendered by the pipeline from public-domain texts, with no hand editing.</p>
+    <code class="cmd">uv run ebooker convert book.epub   # → out/&lt;Title&gt;.m4b</code>
+  </header>
+
+  <section class="samples">
+    <article class="sample">
+      <span class="eyebrow">Russian · Чехов, «Дама с собачкой» (1899)</span>
+      <audio controls preload="none" src="samples/chekhov_ru_pocket.mp3"></audio>
+      <div class="meta"><span>40 s</span><span>4 paragraphs, 6 chunks</span><span>Whisper read it back word for word</span></div>
+      <p class="model"><b>Shtorm-PocketTTS-RU</b>, a 100M-parameter Russian fine-tune of Kyutai's Pocket TTS (CC-BY-4.0), cloning the voice from the 3.6-second clip that ships with the repo. Stress is decided before synthesis: ё restored and ambiguous words marked with an acute by a stress dictionary, which this model follows. About five times faster than real time on a CPU. <code>--backend pocket --voice voices/ref_ru_short.wav</code></p>
+      <p class="text">Говорили, что на набережной появилось новое лицо: дама с собачкой. Дмитрий Дмитрич Гуров, проживший в Ялте уже две недели и привыкший тут, тоже стал интересоваться новыми лицами. Сидя в павильоне у Верне, он видел, как по набережной прошла молодая дама, невысокого роста блондинка, в берете; за нею бежал белый шпиц…</p>
+    </article>
+    <article class="sample">
+      <span class="eyebrow">English · H. G. Wells, <i>The War of the Worlds</i> (1898)</span>
+      <audio controls preload="none" src="samples/wells_en_kokoro.mp3"></audio>
+      <div class="meta"><span>58 s</span><span>4 paragraphs, 8 chunks</span><span>Whisper read it back word for word</span></div>
+      <p class="model"><b>Kokoro-82M</b> (Apache 2.0), the default for English books: 82M parameters, preset voices rather than cloning (this is <code>bm_george</code>; American English defaults to <code>am_michael</code>), 0% word errors on the test corpus and about twenty times faster than real time on an Apple Silicon Mac. It needs espeak-ng only for words outside its vocabulary. <code>--backend kokoro</code>, picked automatically for <code>dc:language = en</code>.</p>
+      <p class="text">No one would have believed in the last years of the nineteenth century that this world was being watched keenly and closely by intelligences greater than man's and yet as mortal as his own; that as men busied themselves about their various concerns they were scrutinised and studied…</p>
+    </article>
+  </section>
+
+  <section>
+    <h2>How a book goes through</h2>
+    <figure>
+      <img src="tts_architecture.svg" alt="ebooker pipeline: book text is normalised, stress-marked and read through by an LLM before a small speech model speaks it; every chunk is transcribed back and compared, failures are re-rolled with a new seed, and what still fails goes to a review list instead of into the audiobook" width="1600" height="900">
+      <figcaption>Text does the work the model cannot (numbers, Latin script, stress, pauses), a small model speaks it, and every chunk is transcribed back and compared before it is allowed into the book. Failures are re-rolled with a new seed; after three, they go to a review list for a human ear.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Backends</h2>
+    <dl>
+      <dt>Russian</dt><dd>Shtorm-PocketTTS-RU (default pick for a cloned narrator), stress-tuned Qwen3-TTS, ESpeech, Piper, Silero. All but Silero follow explicit stress marks; the README has the comparison.</dd>
+      <dt>English</dt><dd>Kokoro-82M by default; the cloning backends read English too, and English sentences inside a Russian book are routed to an English model automatically.</dd>
+      <dt>Verification</dt><dd>Whisper transcribes every chunk back; numerals, content words, word count, duration, silence and clipping are checked, and failures are re-generated with another seed.</dd>
+      <dt>Hardware</dt><dd>Apple Silicon (MPS) or NVIDIA (CUDA) with the same command; the small models are fine on CPU.</dd>
+    </dl>
+  </section>
+
+  <footer>
+    <a href="https://github.com/romadinov/ebooker">github.com/romadinov/ebooker</a> · MIT licence · the texts are in the public domain; the voices are the repository's own reference clip and a Kokoro preset.
+  </footer>
+</main>
+</body>
+</html>
