@@ -584,6 +584,10 @@ class Chunk:
     # Silence to append after this chunk, ms. Encodes prose structure as pacing.
     pause_ms: int
     is_paragraph_end: bool
+    # Language of this chunk when it differs from the book's: "en" for a
+    # sentence written in Latin script inside a Russian book, which goes to an
+    # English voice. Empty means the book's language.
+    lang: str = ""
 
     @property
     def char_count(self) -> int:
@@ -680,14 +684,31 @@ def _merge_bare_numerals(chunks: list["Chunk"], lang: str) -> tuple[list["Chunk"
     return out, merged
 
 
+LATIN_MODES = ("route", "translit", "keep")
+
+
 def chunk_paragraphs(
     paragraphs: list[str], lang: str, chapter_index: int,
     max_chars: int = MAX_CHUNK_CHARS, start_index: int = 0,
+    latin: str = "route",
 ) -> tuple[list[Chunk], list[str]]:
-    """Pack sentences into chunks, never crossing a sentence boundary."""
+    """Pack sentences into chunks, never crossing a sentence boundary.
+
+    ``latin`` says what happens to Latin script in a Russian book: ``route``
+    sends English sentences to an English voice (``Chunk.lang == "en"``) and
+    transliterates Latin words inside Russian sentences into Cyrillic;
+    ``translit`` transliterates everything, English sentences included, so one
+    Russian voice reads it all with an accent; ``keep`` leaves the text alone.
+    A chunk never mixes languages.
+    """
+    if latin not in LATIN_MODES:
+        raise ValueError(f"latin must be one of {LATIN_MODES}, not {latin!r}")
+    from . import latin as latin_mod
     notes: list[str] = []
     chunks: list[Chunk] = []
     idx = start_index
+    n_routed = 0
+    translit_pairs: list[tuple[str, str]] = []
 
     for p_i, para in enumerate(paragraphs):
         para = expand_abbreviations(para, lang)
@@ -710,25 +731,36 @@ def chunk_paragraphs(
 
         buf: list[str] = []
         buf_len = 0
+        buf_lang = ""
         for s_i, sent in enumerate(sentences):
+            sent_lang = ""
+            if lang == "ru" and latin != "keep" and latin_mod.LATIN.search(sent):
+                if latin == "route" and latin_mod.is_english(sent):
+                    sent = latin_mod.romanize(sent)
+                    sent_lang = "en"
+                    n_routed += 1
+                else:
+                    sent, pairs = latin_mod.transliterate(sent)
+                    translit_pairs += pairs
             pieces = _hard_split(sent, max_chars)
             if len(pieces) > 1:
                 notes.append(
                     f"ch{chapter_index} p{p_i}: sentence of {len(sent)} chars "
                     f"hard-split into {len(pieces)}")
             for piece in pieces:
-                if buf and buf_len + 1 + len(piece) > max_chars:
+                if buf and (buf_len + 1 + len(piece) > max_chars or sent_lang != buf_lang):
                     idx += 1
                     chunks.append(Chunk(idx, " ".join(buf), chapter_index,
-                                        PAUSE_SENTENCE, False))
+                                        PAUSE_SENTENCE, False, buf_lang))
                     buf, buf_len = [], 0
                 buf.append(piece)
                 buf_len += len(piece) + 1
+                buf_lang = sent_lang
 
         if buf:
             idx += 1
             chunks.append(Chunk(idx, " ".join(buf), chapter_index,
-                                PAUSE_PARAGRAPH, True))
+                                PAUSE_PARAGRAPH, True, buf_lang))
         elif chunks:
             chunks[-1].pause_ms = PAUSE_PARAGRAPH
             chunks[-1].is_paragraph_end = True
@@ -737,4 +769,11 @@ def chunk_paragraphs(
     if n_merged:
         notes.append(f"{n_merged} bare section numeral(s) merged forward "
                      f"(they synthesise as silence on their own)")
+    if n_routed:
+        notes.append(f"ch{chapter_index}: {n_routed} English sentence(s) routed to the English voice")
+    if translit_pairs:
+        seen = dict(translit_pairs)
+        shown = ", ".join(f"{a}→{b}" for a, b in list(seen.items())[:12])
+        notes.append(f"ch{chapter_index}: {len(translit_pairs)} Latin word(s) transliterated: {shown}"
+                     + (" …" if len(seen) > 12 else ""))
     return chunks, notes

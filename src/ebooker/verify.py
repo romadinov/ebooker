@@ -91,6 +91,9 @@ def canon(s: str, lang: str = "ru") -> str:
     alone that inflates CER on every chunk containing a number, so digits in
     either side are expanded to words before comparison.
     """
+    # A combining acute is a stress mark the pipeline put there (transliterated
+    # Latin words carry one), never something the ASR returns.
+    s = unicodedata.normalize("NFD", s).replace("\u0301", "")
     s = unicodedata.normalize("NFC", s).casefold()
     if lang == "ru":
         s = s.replace("ё", "е")

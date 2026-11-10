@@ -217,6 +217,10 @@ def to_acute_sparse(marked: str) -> str:
       * words containing ё -- ё is inherently stressed, the mark is redundant
       * monosyllables -- there is nothing to disambiguate
       * clitics -- unstressed by nature (see CLITICS)
+      * all but the last mark in a hyphenated compound -- Russian puts the main
+        stress on the last part («кока-ко́ла»), and Pocket given «Ко́ка-Ко́ла»
+        said «Кока-Колола» on two seeds of three, «Кока-Ко́ла» on none (heard
+        by the user in Б. Вавилонская, 2026-11-09)
     """
     out = []
     for token in marked.split(" "):
@@ -226,8 +230,19 @@ def to_acute_sparse(marked: str) -> str:
         if "ё" in word or vowels < 2 or word in CLITICS:
             out.append(bare)
         else:
-            out.append(to_acute(token))
+            out.append(_one_acute_per_compound(to_acute(token)))
     return " ".join(out)
+
+
+ACUTE = "\u0301"
+
+
+def _one_acute_per_compound(word: str) -> str:
+    """«Ко́ка-Ко́ла» -> «Кока-Ко́ла»: keep only the last acute of a hyphenated word."""
+    if "-" not in word or word.count(ACUTE) < 2:
+        return word
+    last = word.rfind(ACUTE)
+    return word[:last].replace(ACUTE, "") + word[last:]
 
 
 DEFAULT_OVERRIDES_FILE = "stress_overrides.txt"

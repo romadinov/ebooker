@@ -81,6 +81,16 @@ transcript is needed. `--variant slow` (default) is the author's calmer delivery
 times faster than real time on CPU; on a DGX Spark it runs on the GPU with the
 Mimi codec on CPU, as the library arranges.
 
+`--variant english` is Kyutai's own English model (`TTSModel.load_model(language=
+"english")`), which the pipeline loads as a second voice for the English
+sentences of a Russian book (see "Latin script in a Russian book" in the README).
+Its voice-cloning weights are gated on Hugging Face: without access the library
+falls back to `kyutai/pocket-tts-without-voice-cloning`, whose preset voices
+(`george`, `michael`, `peter_yearsley`, …) can be named instead of a clip. The
+Russian fine-tune cannot read Latin script at all -- it skips the words -- which
+is why the routing exists. The `cmudict` package supplies the pronunciations for
+transliterating Latin words that stay in Russian sentences.
+
 ## Chatterbox
 
 ```bash

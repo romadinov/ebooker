@@ -13,3 +13,14 @@
 # independent clauses here with no audible gap (measured under 80 ms, against
 # 560 ms for a semicolon). Heard by the user in Б. Вавилонская, 2026-11-09.
 погубит народ, надо = погубит народ; надо
+
+# Latin words in a Russian sentence are transliterated from the CMU dictionary
+# (src/ebooker/latin.py); these are the ones where the established Russian
+# spelling differs from the sound-by-sound result. Matched before transliteration.
+McDonald's = Макдоналдс
+Pizza-Hut = Пицца Хат
+Pizza = Пицца
+business = бизнес
+Businessmen = бизнесмены
+VOXPOPULI = Вокс попули      # Latin, not English: the chapter heading
+VIР = ви-ай-пи               # «VIР-вагоны»: V and I are Latin, the Р Cyrillic

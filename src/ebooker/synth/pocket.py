@@ -20,6 +20,13 @@ complete phrase, chunks of 120-180 characters (the pipeline's are 160: longer
 ones lose volume towards the end), and no Latin letters or digits -- digits
 the pipeline already spells out. No transcript of the reference is needed.
 
+The ``english`` variant is Kyutai's own English model, cloning from the same
+clip: it reads the English sentences a Russian book may contain (``Chunk.lang
+== "en"``) in the narrator's voice. Its cloning weights are gated on Hugging
+Face (accept the terms at huggingface.co/kyutai/pocket-tts, then ``hf auth
+login``); without them, ``reference`` may name one of Kyutai's preset voices
+(``george``, ``michael``, ``peter_yearsley``, …), a different speaker.
+
 It is small enough to run on CPU, which is what Pocket TTS is for: 5 minutes of
 audio rendered in 0.9 minutes on a DGX Spark's CPU cores, faster still on its
 GPU. Mimi, the audio codec, stays on the CPU by the library's own design.
@@ -41,7 +48,10 @@ from .base import Result
 from .qwen_stress import MID_DASH, mark_acute
 
 REPO = "ArtShtorm/Shtorm-PocketTTS-RU"
-VARIANTS = ("slow", "fast")
+VARIANTS = ("slow", "fast", "english")
+GATED = ("Kyutai's voice-cloning weights are gated: accept the terms at "
+         "https://huggingface.co/kyutai/pocket-tts and run `hf auth login` on this "
+         "machine, or name a preset voice (--en-voice george) instead of a clip")
 MAX_SECONDS_PER_CHAR = 1 / 7.0   # it reads ~14 chars/s; twice that is a runaway
 MIN_SECONDS_PER_CHAR = 1 / 40.0  # below this the chunk is silence, not speech
 MIN_CEILING_S = 4.0
@@ -79,14 +89,28 @@ class Pocket:
             from ..ru_stress import SileroAccentuator
             self._acc = SileroAccentuator()
 
-        self._model = TTSModel.load_model(config=f"hf://{REPO}/config_{variant}.yaml")
+        if variant == "english":
+            self._model = TTSModel.load_model(language="english")
+        else:
+            self._model = TTSModel.load_model(config=f"hf://{REPO}/config_{variant}.yaml")
         self._model.to(self.device)
         self.sample_rate = int(self._model.sample_rate)
-        self._voice = self._model.get_state_for_audio_prompt(self.reference)
+        try:
+            self._voice = self._model.get_state_for_audio_prompt(self.reference)
+        except ValueError as e:
+            if "voice cloning" in str(e).lower():
+                raise RuntimeError(GATED) from e
+            raise
 
     @property
     def cache_key(self) -> str:
         return f"pocket:{Path(self.reference).stem}:{self.variant}:stress={self.stress}:v1"
+
+    @staticmethod
+    def is_preset(name: str) -> bool:
+        """A Kyutai preset voice name rather than a clip path."""
+        from pocket_tts.utils.utils import _ORIGINS_OF_PREDEFINED_VOICES
+        return name in _ORIGINS_OF_PREDEFINED_VOICES
 
     def mark(self, text: str) -> str:
         return mark_acute(self._acc, text)

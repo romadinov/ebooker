@@ -77,7 +77,8 @@ def cmd_inspect(a: argparse.Namespace) -> int:
     total_chunks, all_notes = 0, []
     for ch in book.chapters:
         chunks, notes = normalise.chunk_paragraphs(
-            ch.paragraphs, book.language, ch.index, max_chars=a.max_chars)
+            ch.paragraphs, book.language, ch.index, max_chars=a.max_chars,
+            latin=a.latin)
         total_chunks += len(chunks)
         all_notes += notes
     print(f"\nchunks     : {total_chunks:,} (max {a.max_chars} chars)")
@@ -110,10 +111,11 @@ def cmd_edit(a: argparse.Namespace) -> int:
     total = 0
     for ch in chapters:
         chunks, _ = normalise.chunk_paragraphs(
-            ch.paragraphs, lang, ch.index, max_chars=a.max_chars)
+            ch.paragraphs, lang, ch.index, max_chars=a.max_chars, latin=a.latin)
         t0 = time.perf_counter()
         edits = llm_edit.edit_chapter(
-            chunks, marker, edits_dir, ch.index, title=book.title, author=book.author,
+            [c for c in chunks if not c.lang], marker, edits_dir, ch.index,
+            title=book.title, author=book.author,
             model=a.editor_model, jobs=a.editor_jobs, force=a.force)
         total += len(edits)
         print(f"  ch{ch.index:3} {len(chunks):4} chunks  {len(edits):4} edited  "
@@ -234,12 +236,57 @@ def cmd_convert(a: argparse.Namespace) -> int:
             kw["speed"] = a.speed
     elif a.voice:
         kw = {"reference": a.voice}
+    # Sentences in Latin script inside a Russian book go to an English voice
+    # (normalise.Chunk.lang == "en"). Cloning backends read English from the
+    # same clip; Pocket's Russian fine-tune cannot, so it gets Kyutai's English
+    # model with the same clip (or a preset voice). Decided up front, so a
+    # missing English voice fails before an hour of rendering, not during it.
+    tts_en = None
+    needs_en = False
+    if lang == "ru" and a.latin == "route" and not a.package_only:
+        for ch in chapters:
+            cks, _ = normalise.chunk_paragraphs(ch.paragraphs, lang, ch.index,
+                                                max_chars=a.max_chars, latin=a.latin)
+            if any(c.lang == "en" for c in cks):
+                needs_en = True
+                break
     if not a.package_only:
         tts = get_backend(backend, **kw)
         if a.editor == "claude" and not hasattr(tts, "mark"):
             print(f"error: --editor claude needs a backend that reads acute stress "
                   f"marks (pocket, qwen-stress), not {backend}", file=sys.stderr)
             return 2
+        if needs_en:
+            if backend == "pocket" and a.en_backend == "qwen-stress":
+                # The stress-tuned Qwen clone reads English from the same clip in
+                # the narrator's own voice; picked by ear over Kyutai's presets.
+                tts_en = get_backend("qwen-stress", reference=a.en_voice or a.voice,
+                                     device=a.device, stress="none")
+                print(f"English sentences: qwen-stress cloning {Path(a.en_voice or a.voice).stem}")
+            elif backend == "pocket":
+                en_voice = a.en_voice or a.voice
+                try:
+                    tts_en = get_backend("pocket", reference=en_voice, device=a.device,
+                                         variant="english", stress="none")
+                except RuntimeError as e:
+                    print(f"error: {e}", file=sys.stderr)
+                    print("       (or pass --latin translit to have the Russian voice "
+                          "read the English sentences in Cyrillic)", file=sys.stderr)
+                    return 2
+                who = en_voice if Path(en_voice).suffix == "" else Path(en_voice).stem
+                print(f"English sentences: Kyutai Pocket TTS, voice {who}")
+            elif backend in ("qwen-stress", "higgs", "omnivoice", "espeech", "chatterbox"):
+                tts_en = tts   # cloning models read English from the same clip
+                print("English sentences: the same voice, unmarked text")
+            else:
+                print(f"error: {backend} cannot read the English sentences this book "
+                      f"contains; pass --latin translit (Cyrillic transliteration, read "
+                      f"by the Russian voice) or --latin keep", file=sys.stderr)
+                return 2
+            if tts_en.sample_rate != tts.sample_rate:
+                print(f"error: English voice runs at {tts_en.sample_rate} Hz, the book's "
+                      f"at {tts.sample_rate} Hz", file=sys.stderr)
+                return 2
     edits_dir = Path(a.work) / slug / "edits"
 
     if not (a.no_verify or a.package_only):
@@ -268,7 +315,7 @@ def cmd_convert(a: argparse.Namespace) -> int:
     for ch in chapters:
         wav = work / f"ch{ch.index:03d}.wav"
         chunks, _ = normalise.chunk_paragraphs(
-            ch.paragraphs, lang, ch.index, max_chars=a.max_chars)
+            ch.paragraphs, lang, ch.index, max_chars=a.max_chars, latin=a.latin)
         if wav.exists() and not a.force:
             info = sf.info(wav)
             specs.append(package.ChapterSpec(ch.title, wav, info.duration))
@@ -280,8 +327,9 @@ def cmd_convert(a: argparse.Namespace) -> int:
         edits: dict[int, llm_edit.Edit] = {}
         if a.editor == "claude":
             edits = llm_edit.edit_chapter(
-                chunks, tts.mark, edits_dir, ch.index, title=book.title,
-                author=book.author, model=a.editor_model, jobs=a.editor_jobs)
+                [c for c in chunks if not c.lang], tts.mark, edits_dir, ch.index,
+                title=book.title, author=book.author, model=a.editor_model,
+                jobs=a.editor_jobs)
         pieces: list[tuple[np.ndarray, int]] = []
         chapter_flags: list[str] = []
         bad = 0
@@ -301,14 +349,22 @@ def cmd_convert(a: argparse.Namespace) -> int:
         # Keyed on text alone, changing temperature would silently reuse audio
         # generated under the old setting -- which is exactly the mistake that
         # would have kept 7.7% runaway chunks after fixing the cause.
-        synth_key = str(getattr(tts, "cache_key", getattr(tts, "name", "")))
+        synth_keys = {
+            "": str(getattr(tts, "cache_key", getattr(tts, "name", ""))),
+            "en": str(getattr(tts_en, "cache_key", getattr(tts_en, "name", ""))),
+        }
         for c in chunks:
             e = edits.get(c.index)
             # What the model reads; verification still compares with c.text.
             stext = e.text if e else c.text
             pause_ms = llm_edit.scale_pause(c.pause_ms, e.pause if e else None)
+            # An English sentence goes to the English voice and is checked as English.
+            ctts = tts_en if c.lang == "en" and tts_en is not None else tts
+            clang = c.lang or lang
+            if c.lang == "en":
+                stext = stext.replace("«", '"').replace("»", '"')
             digest = hashlib.sha1(
-                (synth_key + "\x00" + stext).encode("utf-8")).hexdigest()[:12]
+                (synth_keys.get(c.lang, synth_keys[""]) + "\x00" + stext).encode("utf-8")).hexdigest()[:12]
             cpath = chunk_dir / f"c{c.index:04d}-{digest}.wav"
             if cpath.exists():
                 try:
@@ -320,20 +376,20 @@ def cmd_convert(a: argparse.Namespace) -> int:
                 except Exception:
                     cpath.unlink(missing_ok=True)   # truncated by a hard kill
 
-            r = tts.synth(stext, lang=lang, seed=a.seed)
+            r = ctts.synth(stext, lang=clang, seed=a.seed)
             r.audio, n_bad = master.sanitise(r.audio)
             nonfinite += n_bad
             if transcriber is not None:
                 for attempt in range(a.retries + 1):
-                    chk = verify_mod.check(r.audio, r.sample_rate, c.text, lang,
+                    chk = verify_mod.check(r.audio, r.sample_rate, c.text, clang,
                                            transcriber=transcriber,
                                            cps=current_cps())
                     if chk.ok:
                         break
                     if attempt < a.retries:
                         retried += 1
-                        r = tts.synth(stext, lang=lang,
-                                      seed=(a.seed or 0) + 1000 * (attempt + 1))
+                        r = ctts.synth(stext, lang=clang,
+                                       seed=(a.seed or 0) + 1000 * (attempt + 1))
                 else:
                     bad += 1
                     line = (f"ch{ch.index} chunk{c.index}: "
@@ -349,7 +405,7 @@ def cmd_convert(a: argparse.Namespace) -> int:
                 print(f"    ch{ch.index} chunk {c.index}/{len(chunks)}  "
                       f"{done/60:.1f} min audio  {el/60:.1f} min elapsed  "
                       f"rtf {el/max(done, 1e-6):.2f}", flush=True)
-            if r.seconds > 0.05 and len(c.text) >= 40:
+            if r.seconds > 0.05 and len(c.text) >= 40 and not c.lang:
                 # Only well-sized chunks inform the rate estimate; short ones
                 # are dominated by onset and trailing silence.
                 cps_samples.append(len(c.text) / r.seconds)
@@ -458,6 +514,7 @@ def main(argv: list[str] | None = None) -> int:
     i = sub.add_parser("inspect", help="parse an EPUB and report structure")
     i.add_argument("epub")
     i.add_argument("--max-chars", type=int, default=normalise.MAX_CHUNK_CHARS)
+    i.add_argument("--latin", default="route", choices=normalise.LATIN_MODES)
     i.add_argument("-v", "--verbose", action="store_true")
     i.set_defaults(fn=cmd_inspect)
 
@@ -468,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--lang", default=None)
     e.add_argument("--work", default="work")
     e.add_argument("--max-chars", type=int, default=normalise.MAX_CHUNK_CHARS)
+    e.add_argument("--latin", default="route", choices=normalise.LATIN_MODES)
     e.add_argument("--editor-model", default=llm_edit.DEFAULT_MODEL)
     e.add_argument("--editor-jobs", type=int, default=llm_edit.JOBS)
     e.add_argument("--force", action="store_true", help="ignore cached edits")
@@ -485,6 +543,17 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--variant", default="rlv2",
                    choices=("rlv1", "rlv2", "sft95k", "podcaster", "sft", "slow", "fast"),
                    help="espeech: which checkpoint; pocket: slow (default) or fast delivery")
+    c.add_argument("--latin", default="route", choices=normalise.LATIN_MODES,
+                   help="Latin script in a Russian book: route English sentences to an "
+                        "English voice and transliterate Latin words in Russian ones "
+                        "(default); translit everything into Cyrillic; or keep it as is")
+    c.add_argument("--en-backend", default="pocket", choices=("pocket", "qwen-stress"),
+                   help="pocket: which model reads the English sentences -- Kyutai's "
+                        "English Pocket (default) or the qwen-stress clone of --voice")
+    c.add_argument("--en-voice", default=None,
+                   help="pocket: voice for the English sentences -- a clip (default: "
+                        "--voice, Kyutai's gated cloning model) or a Kyutai preset name "
+                        "such as george, michael, peter_yearsley")
     c.add_argument("--device", default="auto",
                    help="cuda | mps | cpu | auto (default: detect)")
     c.add_argument("--speed", type=float, default=None,

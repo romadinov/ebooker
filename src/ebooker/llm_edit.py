@@ -24,6 +24,7 @@ marks and punctuation changes never count as errors there.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -120,9 +121,19 @@ def edit_chapter(chunks, marker, out_dir: Path, chapter_index: int, *,
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     cache = out_dir / f"ch{chapter_index:03d}.json"
+    # The cache is only valid for the chunking it was made from: chunk indices
+    # shift when the text treatment changes (a Latin word transliterated, a
+    # sentence routed to another voice), and an edit then lands on the wrong chunk.
+    digest = hashlib.sha1("\n".join(c.text for c in chunks).encode("utf-8")).hexdigest()[:16]
     if cache.exists() and not force:
         data = json.loads(cache.read_text(encoding="utf-8"))
-        return {int(k): Edit(v["text"], v.get("pause")) for k, v in data["edits"].items()}
+        if data.get("digest") == digest and not data.get("failed_batches"):
+            return {int(k): Edit(v["text"], v.get("pause")) for k, v in data["edits"].items()}
+        # A run with failed batches (claude -p dying on a usage limit, an account
+        # switch) must not be served as finished: those chunks got no read-through.
+        log(f"    ch{chapter_index} editor: cached edits are "
+            + ("incomplete" if data.get("failed_batches") else "for a different chunking")
+            + "; redoing")
 
     by_index = {c.index: c for c in chunks}
     marked = {c.index: marker(c.text) for c in chunks}
@@ -158,7 +169,7 @@ def edit_chapter(chunks, marker, out_dir: Path, chapter_index: int, *,
                 edits[i] = Edit(text, item.get("pause"))
 
     cache.write_text(json.dumps({
-        "model": model, "batch": batch, "chunks": len(chunks),
+        "model": model, "batch": batch, "chunks": len(chunks), "digest": digest,
         "edits": {str(i): {"text": e.text, **({"pause": e.pause} if e.pause else {})}
                   for i, e in sorted(edits.items())},
         "rejected": rejected, "failed_batches": failed,
